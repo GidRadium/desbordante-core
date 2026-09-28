@@ -6,7 +6,20 @@ project(
     DESCRIPTION "Python bindings to the interface of the Desbordante C++ core library"
 )
 
+find_package(
+    Python 3.10
+    REQUIRED
+    COMPONENTS Interpreter Development.Module
+)
+
 CPMAddPackage("gh:pybind/pybind11@2.13.4")
+
+CPMAddPackage("gh:Tessil/robin-map@1.4.1")
+
+CPMAddPackage(
+    URI "gh:wjakob/nanobind@3.1.0"
+    OPTIONS "NB_USE_SUBMODULE_DEPS OFF"
+)
 
 # ---- Python Bindings Configuration ----
 
