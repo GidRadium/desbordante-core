@@ -21,6 +21,7 @@ CPMAddPackage(
     OPTIONS "NB_USE_SUBMODULE_DEPS OFF"
 )
 
+nanobind_build_library(nanobind-static)
 # ---- Python Bindings Configuration ----
 
 # Define the output name for Python bindings module
@@ -32,8 +33,14 @@ set(MODULE_NAME
 
 pybind11_add_module(${MODULE_NAME} bind_main_classes.cpp bindings.cpp)
 target_link_libraries(
-    ${MODULE_NAME} PRIVATE pybind11::module Desbordante::algos spdlog::spdlog_header_only
-                           Boost::headers Desbordante.bindlib.util Desbordante.bindlib.data
+    ${MODULE_NAME} PRIVATE
+    pybind11::module
+    nanobind-static
+    Desbordante::algos
+    spdlog::spdlog_header_only
+    Boost::headers
+    Desbordante.bindlib.util
+    Desbordante.bindlib.data
 )
 
 # Uncomment to debug linker issues
@@ -42,7 +49,7 @@ target_link_libraries(
 set(NAME bindlib.data)
 desbordante_add_lib(NAME OBJECT)
 target_sources(${NAME} PRIVATE data/bind_data_types.cpp)
-target_link_libraries(${NAME} PRIVATE pybind11::pybind11)
+target_link_libraries(${NAME} PRIVATE nanobind-static)
 
 set(NAME bindlib.util)
 desbordante_add_lib(NAME OBJECT)

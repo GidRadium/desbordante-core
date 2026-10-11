@@ -76,7 +76,7 @@ void BindMainClasses(py::module_& main_module) {
                         if (type_index == kVoidIndex)
                             throw config::ConfigurationError{std::string{"Option named \""} +
                                                              option_name.data() +
-                                                             "\" doesn't exist!"};
+                                                             "\" doesn't exist!"};data
                         return GetPyType(type_index);
                     },
                     "option_name"_a, "Get info about the option's type." INTERNAL_OPTIONS_METHOD)

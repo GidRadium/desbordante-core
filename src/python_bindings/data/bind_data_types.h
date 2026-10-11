@@ -1,7 +1,7 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include <nanobind/nanobind.h>
 
 namespace python_bindings {
-void BindDataTypes(pybind11::module_& main_module);
+void BindDataTypes(nanobind::module_& main_module);
 }  // namespace python_bindings

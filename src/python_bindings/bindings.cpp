@@ -1,4 +1,9 @@
 #include <pybind11/pybind11.h>
+#include <nanobind/nanobind.h>
+
+namespace {
+namespace nb = nanobind;
+}  // namespace
 
 #include <filesystem>
 #include <initializer_list>
@@ -50,50 +55,60 @@
 namespace python_bindings {
 
 PYBIND11_MODULE(desbordante, module, pybind11::mod_gil_not_used()) {
+    if (!nb::register_module(module.ptr())) {
+        throw pybind11::error_already_set();
+    }
+
+    auto nb_module = nb::borrow<nb::module_>(module.ptr());
+
+    BindDataTypes(nb_module);
+
     using namespace pybind11::literals;
-    for (auto bind_func : {BindMainClasses,
-                           BindDataTypes,
-                           BindCustomMetrics,
-                           BindLogging,
-                           BindFd,
-                           BindAfd,
-                           BindCfd,
-                           BindAr,
-                           BindUcc,
-                           BindAc,
-                           BindOd,
-                           BindNd,
-                           BindFem,
-                           BindFdVerification,
-                           BindMfdVerification,
-                           BindNar,
-                           BindUccVerification,
-                           BindStatistics,
-                           BindInd,
-                           BindIndVerification,
-                           BindCind,
-                           BindCindVerification,
-                           BindGfdVerification,
-                           BindGddVerification,
-                           BindSplit,
-                           BindDynamicFdVerification,
-                           BindNdVerification,
-                           BindSDVerification,
-                           BindSFD,
-                           BindMd,
-                           BindMDVerification,
-                           BindDCVerification,
-                           BindPfdVerification,
-                           BindARVerification,
-                           BindFastADC,
-                           BindGfd,
-                           BindGSpan,
-                           BindCFDVerification,
-                           BindDDVerification,
-                           BindAODVerification,
-                           BindAfdMetricCalculation,
-                           BindPAC,
-                           BindPACVerification}) {
+
+    for (auto bind_func : {
+        BindMainClasses,
+        BindCustomMetrics,
+        BindLogging,
+        BindFd,
+        BindAfd,
+        BindCfd,
+        BindAr,
+        BindUcc,
+        BindAc,
+        BindOd,
+        BindNd,
+        BindFem,
+        BindFdVerification,
+        BindMfdVerification,
+        BindNar,
+        BindUccVerification,
+        BindStatistics,
+        BindInd,
+        BindIndVerification,
+        BindCind,
+        BindCindVerification,
+        BindGfdVerification,
+        BindGddVerification,
+        BindSplit,
+        BindDynamicFdVerification,
+        BindNdVerification,
+        BindSDVerification,
+        BindSFD,
+        BindMd,
+        BindMDVerification,
+        BindDCVerification,
+        BindPfdVerification,
+        BindARVerification,
+        BindFastADC,
+        BindGfd,
+        BindGSpan,
+        BindCFDVerification,
+        BindDDVerification,
+        BindAODVerification,
+        BindAfdMetricCalculation,
+        BindPAC,
+        BindPACVerification
+    }) {
         bind_func(module);
     }
 }
