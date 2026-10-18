@@ -108,3 +108,27 @@ jobs:
           cp test_input_data/TestBool.csv src/python_bindings
           cd src/python_bindings
           python test_pybind_data_stats.py
+      - name: Test API contract
+        working-directory: ${{github.workspace}}
+        shell: bash
+        run: |
+          export ${{ matrix.runtime-env }}
+
+          source .venv/bin/activate
+
+          cp test_input_data/WDC_satellites.csv src/python_bindings
+          cp test_input_data/TestLong.csv src/python_bindings
+          cp test_input_data/TestDataStats.csv src/python_bindings
+          cp test_input_data/TestDD1.csv src/python_bindings
+          cp test_input_data/animals_beverages.csv src/python_bindings
+          cp test_input_data/TestDC1.csv src/python_bindings
+          cp test_input_data/cind/cind_test_en.csv src/python_bindings
+          cp test_input_data/cind/cind_test_de.csv src/python_bindings
+          cp test_input_data/ind_data/two_tables/first.csv src/python_bindings
+          cp test_input_data/ind_data/two_tables/second.csv src/python_bindings
+          cp test_input_data/od_norm_data/small_2x3.csv src/python_bindings
+          cp test_input_data/graph_data/gspan_test_simple.txt src/python_bindings
+          cp test_input_data/transactional_data/rules-kaggle-rows.csv src/python_bindings
+
+          cd src/python_bindings
+          python test_api_contract.py
