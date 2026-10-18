@@ -1,8 +1,6 @@
 #include "python_bindings/fem/bind_fem.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/fem/afem/afem.h"
 #include "core/algorithms/fem/maxfem/maxfem.h"
@@ -12,13 +10,13 @@
 namespace python_bindings {
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }
 
-void BindFem(pybind11::module_& main_module) {
+void BindFem(nb::module_& main_module) {
     auto fem_module = main_module.def_submodule("fem");
 
-    py::class_<algos::FEMAlgorithm, algos::Algorithm>(fem_module, "FEMAlgorithm");
+    nb::class_<algos::FEMAlgorithm, algos::Algorithm>(fem_module, "FEMAlgorithm");
 
     detail::RegisterAlgorithm<algos::maxfem::MaxFEM, algos::FEMAlgorithm>(fem_module, "MaxFEM")
             .def("get_max_frequent_episodes", &algos::maxfem::MaxFEM::GetMaxFrequentEpisodes);

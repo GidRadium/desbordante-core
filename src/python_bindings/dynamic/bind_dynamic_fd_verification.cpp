@@ -1,8 +1,6 @@
 #include "python_bindings/dynamic/bind_dynamic_fd_verification.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/algo_factory.h"
 #include "core/algorithms/fd/fd_verifier/dynamic_fd_verifier.h"
@@ -12,11 +10,11 @@
 #include "python_bindings/py_util/py_to_any.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindDynamicFdVerification(pybind11::module_& main_module) {
+void BindDynamicFdVerification(nb::module_& main_module) {
     using namespace algos;
     using namespace algos::fd_verifier;
 

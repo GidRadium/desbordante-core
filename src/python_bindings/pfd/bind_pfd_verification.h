@@ -1,7 +1,7 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 namespace python_bindings {
-void BindPfdVerification(pybind11::module_& main_module);
+void BindPfdVerification(nb::module_& main_module);
 }  // namespace python_bindings
