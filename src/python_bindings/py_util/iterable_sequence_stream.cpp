@@ -6,9 +6,9 @@
 
 namespace python_bindings {
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
-IterableSequenceStream::IterableSequenceStream(py::iterable sequence)
+IterableSequenceStream::IterableSequenceStream(nb::iterable sequence)
     : sequence_(std::move(sequence)) {
     // Do not call Initialize() here to avoid consuming the first element of a generator
     index_ = 0;
@@ -27,7 +27,7 @@ bool IterableSequenceStream::HasNext() {
     if (!initialized_) {
         Initialize();
     }
-    return iterator_ != py::iterator::sentinel();
+    return iterator_ != nb::iterator::sentinel();
 }
 
 model::TimedEventSet IterableSequenceStream::GetNext() {
@@ -37,10 +37,10 @@ model::TimedEventSet IterableSequenceStream::GetNext() {
 
     // Capture the item as a strong reference because advancing the iterator
     // might release the reference held by the iterator.
-    py::object item = py::reinterpret_borrow<py::object>(*iterator_);
+    nb::object item = nb::borrow<nb::object>(*iterator_);
     ++iterator_;
 
-    bool is_tuple = py::isinstance<py::tuple>(item);
+    bool is_tuple = nb::isinstance<nb::tuple>(item);
 
     if (!expect_explicit_timestamp_.has_value()) {
         expect_explicit_timestamp_ = is_tuple;
@@ -50,30 +50,30 @@ model::TimedEventSet IterableSequenceStream::GetNext() {
                 "timestamps.");
     }
 
-    py::handle events_obj;
+    nb::handle events_obj;
     model::Timestamp timestamp = static_cast<model::Timestamp>(index_);
 
     if (is_tuple) {
-        auto tuple = py::cast<py::tuple>(item);
-        if (py::len(tuple) != 2) {
+        auto tuple = nb::cast<nb::tuple>(item);
+        if (nb::len(tuple) != 2) {
             throw config::ConfigurationError(
                     "Tuple in sequence data must have 2 elements: (events, timestamp).");
         }
         events_obj = tuple[0];
-        timestamp = py::cast<model::Timestamp>(tuple[1]);
+        timestamp = nb::cast<model::Timestamp>(tuple[1]);
     } else {
         events_obj = item;
     }
 
-    if (!py::isinstance<py::iterable>(events_obj)) {
+    if (!nb::isinstance<nb::iterable>(events_obj)) {
         throw config::ConfigurationError("Events entry must be an iterable of events.");
     }
 
     std::vector<model::Event> events;
     for (auto event : events_obj) {
         try {
-            events.push_back(py::cast<model::Event>(event));
-        } catch (py::cast_error const&) {
+            events.push_back(nb::cast<model::Event>(event));
+        } catch (nb::cast_error const&) {
             throw config::ConfigurationError(
                     "Invalid event type in python sequence: expected unsigned int (64-bit).");
         }

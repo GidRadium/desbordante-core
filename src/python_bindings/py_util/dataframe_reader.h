@@ -1,6 +1,6 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/model/table/idataset_stream.h"
 
@@ -8,13 +8,13 @@ namespace python_bindings {
 
 class DataframeReaderBase : public model::IDatasetStream {
 protected:
-    pybind11::object dataframe_;
-    pybind11::iterator df_iter_;
+    nb::object dataframe_;
+    nb::iterator df_iter_;
     std::string name_;
     std::vector<std::string> column_names_;
 
 public:
-    explicit DataframeReaderBase(pybind11::handle dataframe, std::string name = "Pandas dataframe");
+    explicit DataframeReaderBase(nb::handle dataframe, std::string name = "Pandas dataframe");
 
     void Reset() final;
     [[nodiscard]] std::string GetRelationName() const final;
@@ -25,7 +25,7 @@ public:
 
 // If a DataFrame only consists of Python strings, then there is no need to get
 // string representations of every value, and we can get away with the normal
-// pybind11's conversions, which speeds up the reading process.
+// nanobind's conversions, which speeds up the reading process.
 class StringDataframeReader final : public DataframeReaderBase {
 public:
     using DataframeReaderBase::DataframeReaderBase;
@@ -46,9 +46,9 @@ private:
     // Statically storing this may cause problems with garbage collection, but
     // importing a module on every call may cause performance problems, and
     // storing it as a field is a compromise, which is used here.
-    std::function<bool(pybind11::handle)> is_null_ =
-            [check_null = pybind11::module_::import("pandas").attr("isna")](pybind11::handle obj) {
-                return check_null(obj).cast<bool>();
+    std::function<bool(nb::handle)> is_null_ =
+            [check_null = nb::object(nb::module_::import_("pandas").attr("isna"))](nb::handle obj) {
+                return nb::cast<bool>(check_null(obj));
             };
 
 public:

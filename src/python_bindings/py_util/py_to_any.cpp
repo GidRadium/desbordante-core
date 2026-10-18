@@ -1,4 +1,4 @@
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <algorithm>
 #include <functional>
@@ -10,8 +10,6 @@
 
 #include <boost/any.hpp>
 #include <boost/core/demangle.hpp>
-#include <pybind11/stl.h>
-#include <pybind11/stl/filesystem.h>
 
 #include "core/algorithms/algebraic_constraints/bin_operation_enum.h"
 #include "core/algorithms/cfd/fd_first/enums.h"
@@ -47,22 +45,22 @@
 
 namespace {
 
-namespace py = pybind11;
-using ConvFunc = std::function<boost::any(std::string_view, py::handle)>;
+namespace nb = nanobind;
+using ConvFunc = std::function<boost::any(std::string_view, nb::handle)>;
 
 template <typename T>
-T CastAndReplaceCastError(std::string_view option_name, py::handle value) {
+T CastAndReplaceCastError(std::string_view option_name, nb::handle value) {
     try {
-        return py::cast<T>(value);
-    } catch (py::cast_error& e) {
+        return nb::cast<T>(value);
+    } catch (nb::cast_error& e) {
         throw config::ConfigurationError(
                 std::string("Unable to cast Python object to C++ type for option \"") +
                 option_name.data() + '"');
     }
 }
 
-config::InputTable CreateCsvParser(std::string_view option_name, py::tuple const& arguments) {
-    if (py::len(arguments) != 3) {
+config::InputTable CreateCsvParser(std::string_view option_name, nb::tuple const& arguments) {
+    if (nb::len(arguments) != 3) {
         throw config::ConfigurationError("Cannot create a CSV parser from passed tuple.");
     }
 
@@ -73,17 +71,17 @@ config::InputTable CreateCsvParser(std::string_view option_name, py::tuple const
 }
 
 config::InputTable PythonObjToInputTable(
-        std::string_view option_name, py::handle obj,
+        std::string_view option_name, nb::handle obj,
         model::Index object_index = python_bindings::kSingleDataFrame) {
-    if (py::isinstance<py::tuple>(obj)) {
-        return CreateCsvParser(option_name, py::cast<py::tuple>(obj));
+    if (nb::isinstance<nb::tuple>(obj)) {
+        return CreateCsvParser(option_name, nb::cast<nb::tuple>(obj));
     }
     return python_bindings::CreateDataFrameReader(obj, object_index);
 }
 
 template <typename Type>
 std::pair<std::type_index, ConvFunc> const kNormalConvPair{
-        std::type_index(typeid(Type)), [](std::string_view option_name, py::handle value) {
+        std::type_index(typeid(Type)), [](std::string_view option_name, nb::handle value) {
             return CastAndReplaceCastError<Type>(option_name, value);
         }};
 
@@ -91,7 +89,7 @@ template <typename EnumType>
     requires magic_enum::is_scoped_enum_v<EnumType> || magic_enum::is_unscoped_enum_v<EnumType>
 std::pair<std::type_index, ConvFunc> const kEnumConvPair{
         std::type_index(typeid(EnumType)),
-        [](std::string_view option_name, py::handle value) -> boost::any {
+        [](std::string_view option_name, nb::handle value) -> boost::any {
             auto user_str = CastAndReplaceCastError<std::string>(option_name, value);
             auto enum_optional = util::EnumFromStr<EnumType>(user_str);
 
@@ -112,7 +110,7 @@ template <typename EnumType>
     requires magic_enum::is_scoped_enum_v<EnumType> || magic_enum::is_unscoped_enum_v<EnumType>
 std::pair<std::type_index, ConvFunc> const kCharEnumConvPair{
         std::type_index(typeid(EnumType)),
-        [](std::string_view option_name, py::handle value) -> boost::any {
+        [](std::string_view option_name, nb::handle value) -> boost::any {
             using UnderlyingType = magic_enum::underlying_type_t<EnumType>;
             static_assert(std::is_same_v<UnderlyingType, char>,
                           "This converter is for char-based enums only.");
@@ -138,28 +136,28 @@ std::pair<std::type_index, ConvFunc> const kCharEnumConvPair{
             throw config::ConfigurationError(error_message.str());
         }};
 
-boost::any InputTableToAny(std::string_view option_name, py::handle obj) {
+boost::any InputTableToAny(std::string_view option_name, nb::handle obj) {
     return PythonObjToInputTable(option_name, obj);
 }
 
-boost::any SequenceStreamToAny(std::string_view option_name, py::handle obj) {
+boost::any SequenceStreamToAny(std::string_view option_name, nb::handle obj) {
     std::shared_ptr<model::ISequenceStream> stream;
 
     bool is_path = false;
-    if (py::isinstance<py::str>(obj)) {
+    if (nb::isinstance<nb::str>(obj)) {
         is_path = true;
     } else {
-        py::module_ pathlib = py::module_::import("pathlib");
-        if (py::isinstance(obj, pathlib.attr("Path"))) {
+        nb::module_ pathlib = nb::module_::import_("pathlib");
+        if (nb::isinstance(obj, pathlib.attr("Path"))) {
             is_path = true;
         }
     }
 
     if (is_path) {
-        auto path = py::cast<std::filesystem::path>(obj);
+        auto path = nb::cast<std::filesystem::path>(obj);
         stream = std::make_shared<parser::FileSequenceParser>(path);
-    } else if (py::isinstance<py::iterable>(obj)) {
-        auto iterable = py::cast<py::iterable>(obj);
+    } else if (nb::isinstance<nb::iterable>(obj)) {
+        auto iterable = nb::cast<nb::iterable>(obj);
         stream = std::make_shared<python_bindings::IterableSequenceStream>(iterable);
     } else {
         throw config::ConfigurationError("Option \"" + std::string(option_name) +
@@ -170,8 +168,8 @@ boost::any SequenceStreamToAny(std::string_view option_name, py::handle obj) {
     return stream;
 }
 
-boost::any InputTablesToAny(std::string_view option_name, py::handle obj) {
-    auto tables = CastAndReplaceCastError<std::vector<py::handle>>(option_name, obj);
+boost::any InputTablesToAny(std::string_view option_name, nb::handle obj) {
+    auto tables = CastAndReplaceCastError<std::vector<nb::handle>>(option_name, obj);
     std::vector<config::InputTable> parsers;
     parsers.reserve(tables.size());
     for (std::size_t i = 0; i != tables.size(); ++i) {
@@ -180,48 +178,48 @@ boost::any InputTablesToAny(std::string_view option_name, py::handle obj) {
     return parsers;
 }
 
-boost::any StringVectorToAny(std::string_view option_name, py::handle obj) {
+boost::any StringVectorToAny(std::string_view option_name, nb::handle obj) {
     if (obj.is_none()) {
         return std::vector<std::string>{};
     }
 
-    if (!py::isinstance<py::sequence>(obj) || py::isinstance<py::str>(obj)) {
+    if (!nb::isinstance<nb::sequence>(obj) || nb::isinstance<nb::str>(obj)) {
         throw config::ConfigurationError("Option \"" + std::string(option_name) +
                                          "\" must be a list of strings");
     }
 
     std::vector<std::string> out;
-    auto seq = py::reinterpret_borrow<py::sequence>(obj);
-    out.reserve(py::len(seq));
+    auto seq = nb::borrow<nb::sequence>(obj);
+    out.reserve(nb::len(seq));
 
-    for (py::handle item : seq) {
-        out.push_back(py::cast<std::string>(py::str(item)));
+    for (nb::handle item : seq) {
+        out.push_back(nb::cast<std::string>(nb::str(item)));
     }
     return out;
 }
 
-boost::any CustomMetricToAny(std::string_view, py::handle obj) {
+boost::any CustomMetricToAny(std::string_view, nb::handle obj) {
     return config::CustomMetricOptionType{
-            new python_bindings::PyCustomMetric(py::reinterpret_borrow<py::object>(obj))};
+            new python_bindings::PyCustomMetric(nb::borrow<nb::object>(obj))};
 }
 
-boost::any CustomMetricsToAny(std::string_view option_name, py::handle obj) {
-    auto metric_handles = CastAndReplaceCastError<std::vector<py::handle>>(option_name, obj);
+boost::any CustomMetricsToAny(std::string_view option_name, nb::handle obj) {
+    auto metric_handles = CastAndReplaceCastError<std::vector<nb::handle>>(option_name, obj);
     config::CustomMetricsOptionType result(metric_handles.size());
     std::ranges::transform(metric_handles, result.begin(),
-                           [](py::handle handle) -> config::CustomMetricOptionType {
+                           [](nb::handle handle) -> config::CustomMetricOptionType {
                                if (handle.is_none()) {
                                    return nullptr;
                                }
                                return std::make_shared<python_bindings::PyCustomMetric>(
-                                       py::reinterpret_borrow<py::object>(handle));
+                                       nb::borrow<nb::object>(handle));
                            });
     return result;
 }
 
-boost::any CustomVectorMetricToAny(std::string_view, py::handle obj) {
+boost::any CustomVectorMetricToAny(std::string_view, nb::handle obj) {
     return config::CustomVectorMetricOptionType{
-            new python_bindings::PyCustomVectorMetric(py::reinterpret_borrow<py::object>(obj))};
+            new python_bindings::PyCustomVectorMetric(nb::borrow<nb::object>(obj))};
 }
 
 std::unordered_map<std::type_index, ConvFunc> const kConverters{
@@ -278,7 +276,7 @@ std::unordered_map<std::type_index, ConvFunc> const kConverters{
 
 namespace python_bindings {
 
-boost::any PyToAny(std::string_view option_name, std::type_index index, py::handle obj) {
+boost::any PyToAny(std::string_view option_name, std::type_index index, nb::handle obj) {
     auto const it = kConverters.find(index);
     if (it == kConverters.end()) [[unlikely]] {
         std::ostringstream oss;

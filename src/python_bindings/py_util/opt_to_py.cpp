@@ -1,5 +1,7 @@
 #include "python_bindings/py_util/opt_to_py.h"
 
+#include "python_bindings/binding_core.h"
+
 #include <functional>
 #include <sstream>
 #include <stdexcept>
@@ -7,7 +9,6 @@
 #include <unordered_map>
 
 #include <boost/core/demangle.hpp>
-#include <pybind11/stl.h>
 
 #include "core/algorithms/cfd/model/raw_cfd.h"
 #include "core/algorithms/dd/dd.h"
@@ -31,18 +32,18 @@
 #include "core/util/enum_to_str.h"
 
 namespace {
-namespace py = pybind11;
-using ConvFunction = std::function<py::object(boost::any)>;
+namespace nb = nanobind;
+using ConvFunction = std::function<nb::object(boost::any)>;
 
 template <typename T>
 std::pair<std::type_index, ConvFunction> const kNormalConvPair{
         std::type_index(typeid(T)),
-        [](boost::any value) { return py::cast(boost::any_cast<T>(value)); }};
+        [](boost::any value) { return nb::cast(boost::any_cast<T>(value)); }};
 
 template <typename T>
 std::pair<std::type_index, ConvFunction> const kEnumConvPair{
         std::type_index(typeid(T)),
-        [](boost::any value) { return py::cast(util::EnumToStr(boost::any_cast<T>(value))); }};
+        [](boost::any value) { return nb::cast(util::EnumToStr(boost::any_cast<T>(value))); }};
 
 std::unordered_map<std::type_index, ConvFunction> const kConverters{
         kNormalConvPair<int>,
@@ -75,7 +76,7 @@ std::unordered_map<std::type_index, ConvFunction> const kConverters{
 }  // namespace
 
 namespace python_bindings {
-py::object OptToPy(std::type_index type, boost::any val) {
+nb::object OptToPy(std::type_index type, boost::any val) {
     auto const it = kConverters.find(type);
     if (it == kConverters.end()) [[unlikely]] {
         std::ostringstream oss;

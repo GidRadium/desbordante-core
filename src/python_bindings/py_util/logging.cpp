@@ -1,19 +1,12 @@
 #include "python_bindings/py_util/logging.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <memory>
-#include <mutex>
 #include <shared_mutex>
+#include <string>
 #include <string_view>
 #include <unordered_map>
-
-#include <pybind11/detail/common.h>
-#include <pybind11/stl.h>
-
-#ifdef PYBIND11_HAS_SUBINTERPRETER_SUPPORT
-#include <pybind11/subinterpreter.h>
-#endif
 
 #include <spdlog/details/null_mutex.h>
 #include <spdlog/sinks/base_sink.h>
@@ -22,46 +15,35 @@
 #include "core/util/logger.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 
 constexpr int kPyTraceLevel = 5;
-using InterpreterId = int64_t;
 
-InterpreterId GetCurrentInterpreterId() {
-#ifdef PYBIND11_HAS_SUBINTERPRETER_SUPPORT
-    return py::subinterpreter::current().id();
-#else
-    return 0;
-#endif
-}
-
-template <typename Mutex>
-class MultiTenantPythonSink : public spdlog::sinks::base_sink<Mutex> {
+class PythonSink : public spdlog::sinks::base_sink<spdlog::details::null_mutex> {
 public:
-    MultiTenantPythonSink() = default;
-
-    void RegisterLogger(py::object logger) {
-        InterpreterId id = GetCurrentInterpreterId();
-        if (id < 0) return;
-
-        std::unique_lock lock(registry_mutex_);
-        interpreters_loggers_.try_emplace(id, std::move(logger));
+    void RegisterLogger(nb::object logger) {
+        std::unique_lock lock(logger_mutex_);
+        logger_ = std::move(logger);
     }
 
     void UnregisterLogger() {
-        InterpreterId id = GetCurrentInterpreterId();
-        if (id < 0) return;
-
-        std::unique_lock lock(registry_mutex_);
-        interpreters_loggers_.erase(id);
+        std::unique_lock lock(logger_mutex_);
+        logger_ = nb::object();
     }
 
 protected:
     void sink_it_(spdlog::details::log_msg const& msg) override {
-        py::gil_scoped_acquire gil;
+        nb::gil_scoped_acquire gil;
+        if (!gil.is_valid()) {
+            return;
+        }
 
-        py::object target_logger = GetCurrentSubinterpreterLogger();
-        if (!target_logger) {
+        nb::object target_logger;
+        {
+            std::shared_lock lock(logger_mutex_);
+            target_logger = logger_;
+        }
+        if (!target_logger.is_valid()) {
             return;
         }
 
@@ -83,34 +65,20 @@ protected:
         if (!ShouldLog(target_logger, msg_py_level)) {
             return;
         }
-        std::string_view payload(msg.payload.data(), msg.payload.size());
+        nb::str payload(msg.payload.data(), msg.payload.size());
         (void)target_logger.attr("log")(msg_py_level, payload);
     }
 
     void flush_() override {}
 
 private:
-    py::object GetCurrentSubinterpreterLogger() {
-        InterpreterId id = GetCurrentInterpreterId();
-        if (id < 0) return {};
-
-        std::shared_lock lock(registry_mutex_);
-        auto it = interpreters_loggers_.find(id);
-        if (it == interpreters_loggers_.end()) {
-            return {};
-        }
-        return it->second;
+    static bool ShouldLog(nb::object const& logger, int level) {
+        return nb::cast<bool>(logger.attr("isEnabledFor")(level));
     }
 
-    bool ShouldLog(py::object const& logger, int level) const {
-        return logger.attr("isEnabledFor")(level).cast<bool>();
-    }
-
-    std::shared_mutex registry_mutex_;
-    std::unordered_map<InterpreterId, py::object> interpreters_loggers_;
+    std::shared_mutex logger_mutex_;
+    nb::object logger_;
 };
-
-using PythonSink = MultiTenantPythonSink<spdlog::details::null_mutex>;
 
 std::shared_ptr<PythonSink> GetGlobalPythonSink() {
     static auto sink = std::make_shared<PythonSink>();
@@ -118,24 +86,29 @@ std::shared_ptr<PythonSink> GetGlobalPythonSink() {
 }
 
 void SetupLoggingBridge() {
-    py::gil_scoped_acquire gil;
+    nb::gil_scoped_acquire gil;
+    if (!gil.is_valid()) {
+        return;
+    }
     try {
-        py::module_ logging = py::module_::import("logging");
+        nb::module_ logging = nb::module_::import_("logging");
 
-        if (!py::hasattr(logging, "TRACE")) {
+        if (!nb::hasattr(logging, "TRACE")) {
             logging.attr("addLevelName")(kPyTraceLevel, "TRACE");
-            logging.add_object("TRACE", py::int_(kPyTraceLevel));
+            logging.attr("TRACE") = nb::int_(kPyTraceLevel);
         }
 
-        py::object py_logger = logging.attr("getLogger")("desbordante");
+        nb::object py_logger = logging.attr("getLogger")("desbordante");
 
         auto python_sink = GetGlobalPythonSink();
         python_sink->RegisterLogger(std::move(py_logger));
 
         ::util::logging::Initialize({std::move(python_sink)});
-    } catch (py::error_already_set const& e) {
-        py::print("ERROR: Error during Python logging setup:", e.what(),
-                  py::arg("file") = py::module_::import("sys").attr("stderr"));
+    } catch (nb::python_error const& e) {
+        std::string message = "ERROR: Error during Python logging setup: ";
+        message += e.what();
+        nb::module_ sys = nb::module_::import_("sys");
+        nb::print(message.c_str(), nb::handle(), sys.attr("stderr"));
         throw;
     }
 }
@@ -150,9 +123,9 @@ void CleanupAtExit() {
 
 namespace python_bindings {
 
-void BindLogging(py::module_&) {
+void BindLogging(nb::module_&) {
     SetupLoggingBridge();
-    py::module_::import("atexit").attr("register")(py::cpp_function(CleanupAtExit));
+    nb::module_::import_("atexit").attr("register")(nb::cpp_function(CleanupAtExit));
 }
 
 }  // namespace python_bindings

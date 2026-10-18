@@ -1,6 +1,6 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <array>
 #include <cstddef>
@@ -26,16 +26,11 @@ std::string MakeDocString() {
 }
 
 template <typename AlgorithmType, typename BaseType>
-auto RegisterAlgorithm(pybind11::module_ module, auto&& name) {
-    namespace py = pybind11;
-    // py::multiple_inheritance only needed for Pyro. May incur an unnecessary performance cost for
-    // other classes, but whatever pybind11 manages is probably not a performance-critical part, so
-    // it should be fine.
-    auto cls = py::class_<AlgorithmType, BaseType>(module, std::move(name),
-                                                   py::multiple_inheritance());
+auto RegisterAlgorithm(nb::module_ module, auto&& name) {
+    auto cls = nb::class_<AlgorithmType, BaseType>(module, std::move(name));
 
     cls.doc() = MakeDocString<AlgorithmType>();
-    cls.def(py::init<>());
+    cls.def(nb::init<>());
     return cls;
 }
 
@@ -52,16 +47,16 @@ using MemberPointerClass = typename MemberPointerClassHelper<MemberPointer>::typ
 }  // namespace detail
 
 template <typename Default, typename... Others>
-auto BindPrimitive(pybind11::module_& module, auto result_method, char const* base_name,
+auto BindPrimitive(nb::module_& module, auto result_method, char const* base_name,
                    char const* base_result_method_name,
                    std::array<char const*, sizeof...(Others) + 1> algo_names) {
-    namespace py = pybind11;
+    namespace nb = nanobind;
     using algos::Algorithm;
 
     using ResultMethodType = std::decay_t<decltype(result_method)>;
     static_assert(std::is_member_pointer_v<ResultMethodType>);
     using Base = util::MemPtrDeduce<ResultMethodType>::Class;
-    py::class_<Base, Algorithm>(module, base_name).def(base_result_method_name, result_method);
+    nb::class_<Base, Algorithm>(module, base_name).def(base_result_method_name, result_method);
     auto algos_module = module.def_submodule("algorithms");
     auto arr_iter = algo_names.begin();
     auto default_module = detail::RegisterAlgorithm<Default, Base>(algos_module, *arr_iter++);
@@ -71,8 +66,8 @@ auto BindPrimitive(pybind11::module_& module, auto result_method, char const* ba
 }
 
 template <typename AlgorithmType>
-auto BindPrimitiveNoBase(pybind11::module_& module, char const* algo_name) {
-    namespace py = pybind11;
+auto BindPrimitiveNoBase(nb::module_& module, char const* algo_name) {
+    namespace nb = nanobind;
     using algos::Algorithm;
 
     auto algos_module = module.def_submodule("algorithms");

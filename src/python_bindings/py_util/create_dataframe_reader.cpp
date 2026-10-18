@@ -6,12 +6,12 @@
 
 namespace python_bindings {
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
-static bool IsDataFrame(py::handle object) {
+static bool IsDataFrame(nb::handle object) {
     try {
-        return py::isinstance(object, py::module::import("pandas").attr("DataFrame"));
-    } catch (py::error_already_set& e) {
+        return nb::isinstance(object, nb::module_::import_("pandas").attr("DataFrame"));
+    } catch (nb::python_error& e) {
         if (e.matches(PyExc_ImportError)) {
             return false;
         } else {
@@ -20,18 +20,18 @@ static bool IsDataFrame(py::handle object) {
     }
 }
 
-static bool AllColumnsAreStrings(py::handle dataframe) {
-    py::object dtypes = dataframe.attr("dtypes");
-    return dtypes[dtypes.attr("__ne__")(py::str{"string"})].attr("empty").cast<bool>();
+static bool AllColumnsAreStrings(nb::handle dataframe) {
+    nb::object dtypes = dataframe.attr("dtypes");
+    return nb::cast<bool>(dtypes[dtypes.attr("__ne__")(nb::str{"string"})].attr("empty"));
 }
 
-config::InputTable CreateDataFrameReader(py::handle dataframe, model::Index object_index) {
+config::InputTable CreateDataFrameReader(nb::handle dataframe, model::Index object_index) {
     if (!IsDataFrame(dataframe))
         throw config::ConfigurationError("Passed object is not a dataframe");
     std::string name = [&]() -> std::string {
         try {
-            return py::str(dataframe.attr("attrs")["name"]);
-        } catch (py::error_already_set& e) {
+            return nb::cast<std::string>(nb::str(dataframe.attr("attrs")["name"]));
+        } catch (nb::python_error& e) {
             if (!(e.matches(PyExc_KeyError) || e.matches(PyExc_AttributeError))) throw;
             return object_index == kSingleDataFrame
                            ? "Pandas dataframe"

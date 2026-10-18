@@ -1,4 +1,4 @@
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <filesystem>
 #include <initializer_list>
@@ -49,8 +49,8 @@
 
 namespace python_bindings {
 
-PYBIND11_MODULE(desbordante, module, pybind11::mod_gil_not_used()) {
-    using namespace pybind11::literals;
+NB_MODULE(desbordante, module) {
+    using namespace nb::literals;
     for (auto bind_func : {BindMainClasses,
                            BindDataTypes,
                            BindCustomMetrics,

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/algorithm.h"
 
 namespace configure_algorithm {
-void ConfigureAlgo(algos::Algorithm& algorithm, pybind11::kwargs const& kwargs);
+void ConfigureAlgo(algos::Algorithm& algorithm, nb::dict const& kwargs);
 }
 
 namespace python_bindings {
-void BindMainClasses(pybind11::module_& main_module);
+void BindMainClasses(nb::module_& main_module);
 }  // namespace python_bindings

@@ -1,11 +1,9 @@
 #include "python_bindings/bind_main_classes.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <typeindex>
 #include <typeinfo>
-
-#include <pybind11/stl.h>
 
 #include "core/algorithms/algo_factory.h"
 #include "core/algorithms/algorithm.h"
@@ -16,17 +14,17 @@
 #include "python_bindings/py_util/py_to_any.h"
 
 namespace configure_algorithm {
-namespace py = pybind11;
+namespace nb = nanobind;
 using algos::Algorithm;
 auto const kVoidIndex = std::type_index{typeid(void)};
 
-void ConfigureAlgo(Algorithm& algorithm, py::kwargs const& kwargs) {
+void ConfigureAlgo(Algorithm& algorithm, nb::dict const& kwargs) {
     using python_bindings::PyToAny;
     algos::ConfigureFromFunction(
             algorithm, [&kwargs, &algorithm](std::string_view option_name) -> boost::any {
                 std::type_index type_index = algorithm.GetTypeIndex(option_name);
                 assert(type_index != kVoidIndex);
-                return kwargs.contains(option_name)
+                return kwargs.contains(option_name.data())
                                ? PyToAny(option_name, type_index, kwargs[option_name.data()])
                                : boost::any{};
             });
@@ -36,24 +34,23 @@ void ConfigureAlgo(Algorithm& algorithm, py::kwargs const& kwargs) {
 using namespace configure_algorithm;
 
 namespace python_bindings {
-void BindMainClasses(py::module_& main_module) {
-    using namespace pybind11::literals;
+void BindMainClasses(nb::module_& main_module) {
+    using namespace nb::literals;
 
     main_module.doc() =
             "A high-performance data profiling library oriented towards exploratory data analysis";
 
-    py::register_exception<config::ConfigurationError>(main_module, "ConfigurationError",
-                                                       PyExc_ValueError);
+    nb::exception<config::ConfigurationError>(main_module, "ConfigurationError", PyExc_ValueError);
 
 #define INTERNAL_OPTIONS_METHOD                                                    \
     "\nThis option is only expected to be used by internal development Python\n"   \
     "scripts. For normal use, you can set the algorithms' options using keyword\n" \
     "arguments of the load_data and execute methods."
-    py::class_<Algorithm>(main_module, "Algorithm")
+    nb::class_<Algorithm>(main_module, "Algorithm")
             .def(
                     "_set_option",
                     [](Algorithm& algorithm, std::string_view option_name,
-                       py::handle option_value) {
+                       nb::handle option_value) {
                         if (option_value.is_none()) {
                             algorithm.SetOption(option_name);
                             return;
@@ -63,7 +60,7 @@ void BindMainClasses(py::module_& main_module) {
                                 PyToAny(option_name, algorithm.GetTypeIndex(option_name),
                                         option_value));
                     },
-                    "option_name"_a, "option_value"_a = py::none(),
+                    "option_name"_a, "option_value"_a = nb::none(),
                     "Set option value. Passing None means setting the default "
                     "value." INTERNAL_OPTIONS_METHOD)
             .def("_get_needed_options", &Algorithm::GetNeededOptions,
@@ -82,7 +79,7 @@ void BindMainClasses(py::module_& main_module) {
                     "option_name"_a, "Get info about the option's type." INTERNAL_OPTIONS_METHOD)
             .def(
                     "load_data",
-                    [](Algorithm& algo, py::kwargs const& kwargs) {
+                    [](Algorithm& algo, nb::kwargs const& kwargs) {
                         ConfigureAlgo(algo, kwargs);
                         algo.LoadData();
                     },
@@ -95,7 +92,7 @@ void BindMainClasses(py::module_& main_module) {
                     "get_opts",
                     [](Algorithm& algorithm) {
                         auto opt_value_info = algorithm.GetOptValues();
-                        std::unordered_map<std::string_view, pybind11::object> res;
+                        std::unordered_map<std::string_view, nb::object> res;
                         for (auto const& [name, value_info] : opt_value_info) {
                             if (name == config::names::kTable || name == config::names::kSequence) {
                                 continue;
@@ -107,7 +104,7 @@ void BindMainClasses(py::module_& main_module) {
                     "Get option values represented as the closest Python type")
             .def(
                     "execute",
-                    [](Algorithm& algo, py::kwargs const& kwargs) {
+                    [](Algorithm& algo, nb::kwargs const& kwargs) {
                         ConfigureAlgo(algo, kwargs);
                         return algo.Execute();
                     },
