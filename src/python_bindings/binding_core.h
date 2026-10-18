@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include <nanobind/stl/complex.h>
+#include <nanobind/operators.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/list.h>

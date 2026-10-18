@@ -99,7 +99,7 @@ function(desbordante_add_bind name)
 
     target_sources(${bind_name} PRIVATE ${arg_SRCS})
 
-    list(APPEND arg_LIBS pybind11::pybind11 ${DESBORDANTE_PREFIX}.compile_feats)
+    list(APPEND arg_LIBS nanobind-static ${DESBORDANTE_PREFIX}.compile_feats)
     target_link_libraries(${bind_name} PRIVATE ${arg_LIBS})
 
     target_link_libraries(${MODULE_NAME} PRIVATE ${bind_name})

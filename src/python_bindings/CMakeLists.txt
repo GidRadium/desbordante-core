@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.26)
 
 project(
     Desbordante.bindings
@@ -8,7 +8,7 @@ project(
 
 # nanobind 3.1.0 is the latest stable release at the start of the migration. It requires C++17
 # and Python >= 3.10 and supports linked Stable ABI builds (STABLE_ABI) on CPython >= 3.12,
-# which released pybind11 versions cannot do. The probe targets below are only toolchain checks:
+# which the previous binding generator could not do. The probe targets below are only toolchain checks:
 # they are not installed, so the wheel still contains only the desbordante module.
 find_package(
     Python 3.10 REQUIRED
@@ -16,7 +16,6 @@ find_package(
     OPTIONAL_COMPONENTS Development.SABIModule
 )
 
-CPMAddPackage("gh:pybind/pybind11@2.13.4")
 CPMAddPackage("gh:Tessil/robin-map@1.4.1")
 CPMAddPackage(URI "gh:wjakob/nanobind@3.1.0" OPTIONS "NB_USE_SUBMODULE_DEPS OFF")
 nanobind_build_library(nanobind-static)
@@ -30,19 +29,19 @@ set(MODULE_NAME
     CACHE INTERNAL ""
 )
 
-pybind11_add_module(${MODULE_NAME} bind_main_classes.cpp bindings.cpp)
+nanobind_add_module(${MODULE_NAME} NB_STATIC bind_main_classes.cpp bindings.cpp)
 target_link_libraries(
-    ${MODULE_NAME} PRIVATE pybind11::module Desbordante::algos spdlog::spdlog_header_only
-                           Boost::headers Desbordante.bindlib.util Desbordante.bindlib.data
+    ${MODULE_NAME} PRIVATE Desbordante::algos spdlog::spdlog_header_only Boost::headers
+                           Desbordante.bindlib.util Desbordante.bindlib.data
 )
 
 # Uncomment to debug linker issues
-#target_link_libraries(${MODULE_NAME} PRIVATE "-Wl,--no-undefined" pybind11::embed)
+#target_link_libraries(${MODULE_NAME} PRIVATE "-Wl,--no-undefined")
 
 set(NAME bindlib.data)
 desbordante_add_lib(NAME OBJECT)
 target_sources(${NAME} PRIVATE data/bind_data_types.cpp)
-target_link_libraries(${NAME} PRIVATE pybind11::pybind11)
+target_link_libraries(${NAME} PRIVATE nanobind-static)
 
 set(NAME bindlib.util)
 desbordante_add_lib(NAME OBJECT)
@@ -60,7 +59,7 @@ target_sources(
             py_util/value_to_py.cpp
 )
 target_link_libraries(
-    ${NAME} PRIVATE spdlog::spdlog_header_only Boost::headers pybind11::pybind11
+    ${NAME} PRIVATE spdlog::spdlog_header_only Boost::headers nanobind-static
                     ${DESBORDANTE_PREFIX}::config::enum_members_string
 )
 

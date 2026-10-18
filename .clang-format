@@ -7,7 +7,7 @@ ColumnLimit: 100
 AllowShortFunctionsOnASingleLine: Empty
 
 IncludeCategories:
-  - Regex: <nanobind/nanobind[.]h>|<Python[.]h>
+  - Regex: <nanobind/nanobind[.]h>|"python_bindings/binding_core[.]h"|<Python[.]h>
     Priority: 1
   - Regex: '<(spdlog|boost|magic_enum|gmock|gtest|nanobind|Python).+>'
     Priority: 3
