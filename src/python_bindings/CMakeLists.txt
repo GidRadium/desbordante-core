@@ -6,7 +6,20 @@ project(
     DESCRIPTION "Python bindings to the interface of the Desbordante C++ core library"
 )
 
+# nanobind 3.1.0 is the latest stable release at the start of the migration. It requires C++17
+# and Python >= 3.10 and supports linked Stable ABI builds (STABLE_ABI) on CPython >= 3.12,
+# which released pybind11 versions cannot do. The probe targets below are only toolchain checks:
+# they are not installed, so the wheel still contains only the desbordante module.
+find_package(
+    Python 3.10 REQUIRED
+    COMPONENTS Interpreter Development.Module
+    OPTIONAL_COMPONENTS Development.SABIModule
+)
+
 CPMAddPackage("gh:pybind/pybind11@2.13.4")
+CPMAddPackage("gh:Tessil/robin-map@1.4.1")
+CPMAddPackage(URI "gh:wjakob/nanobind@3.1.0" OPTIONS "NB_USE_SUBMODULE_DEPS OFF")
+nanobind_build_library(nanobind-static)
 
 # ---- Python Bindings Configuration ----
 
@@ -337,6 +350,34 @@ desbordante_add_bind(
 desbordante_add_bind(
     sd SRCS sd/bind_sd_verification.cpp LIBS ${DESBORDANTE_PREFIX}::sd::verifier Boost::headers
 )
+
+# ---- nanobind toolchain probe ----
+
+# These modules verify the linked and Stable ABI modes of the nanobind toolchain. They are
+# deliberately absent from install(TARGETS ...): only ${MODULE_NAME} is shipped in the wheel.
+
+option(DESBORDANTE_BUILD_NANOBIND_ABI3_PROBE "Build the nanobind Stable ABI probe module" ON)
+
+nanobind_add_module(_nb_probe nanobind_probe.cpp)
+target_include_directories(_nb_probe PRIVATE ${DESBORDANTE_COMMON_INCLUDE_DIRS})
+target_link_libraries(_nb_probe PRIVATE ${DESBORDANTE_PREFIX}.compile_feats)
+
+if(DESBORDANTE_BUILD_NANOBIND_ABI3_PROBE
+   AND TARGET Python::SABIModule
+   AND Python_VERSION VERSION_GREATER_EQUAL 3.12
+   AND Python_INTERPRETER_ID STREQUAL "Python"
+   AND NOT NB_FREE_THREADED
+)
+    nanobind_add_module(_nb_probe_abi3 STABLE_ABI nanobind_probe.cpp)
+    target_compile_definitions(_nb_probe_abi3 PRIVATE NANOBIND_PROBE_ABI3)
+    target_include_directories(_nb_probe_abi3 PRIVATE ${DESBORDANTE_COMMON_INCLUDE_DIRS})
+    target_link_libraries(_nb_probe_abi3 PRIVATE ${DESBORDANTE_PREFIX}.compile_feats)
+else()
+    message(
+        STATUS
+            "Not building _nb_probe_abi3: linked Stable ABI requires CPython >= 3.12 with Development.SABIModule"
+    )
+endif()
 
 # ---- Installation Setup ----
 
