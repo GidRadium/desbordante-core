@@ -1,16 +1,14 @@
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/ar/ar_verifier/ar_verifier.h"
 #include "python_bindings/py_util/bind_primitive.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindARVerification(py::module_& main_module) {
+void BindARVerification(nb::module_& main_module) {
     using namespace algos;
     using namespace algos::ar_verifier;
 

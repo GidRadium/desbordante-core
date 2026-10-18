@@ -1,15 +1,12 @@
 #include "python_bindings/gdd/bind_gdd_verification.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
-
-#include <pybind11/stl.h>
-#include <pybind11/stl/filesystem.h>
 
 #include "core/algorithms/algorithm.h"
 #include "core/algorithms/gdd/gdd.h"
@@ -143,8 +140,8 @@ std::string Repr(model::GddCounterexample const& ce) {
 
 }  // namespace
 
-void BindGddVerification(pybind11::module_& main_module) {
-    namespace py = pybind11;
+void BindGddVerification(nb::module_& main_module) {
+    namespace nb = nanobind;
     using algos::Algorithm;
     using algos::GddValidator;
     using algos::NaiveGddValidator;
@@ -162,18 +159,23 @@ void BindGddVerification(pybind11::module_& main_module) {
     using model::gdd::detail::GddToken;
     using model::gdd::detail::RelTag;
     using model::gdd::detail::TokenField;
-    using py::literals::operator""_a;
+    using nb::literals::operator""_a;
 
     auto gdd_module = main_module.def_submodule("gdd");
 
-    py::enum_<DistanceMetric>(gdd_module, "DistanceMetric")
+    nb::enum_<DistanceMetric>(gdd_module, "DistanceMetric")
             .value("ABS_DIFF", DistanceMetric::kAbsDiff)
             .value("EDIT_DISTANCE", DistanceMetric::kEditDistance)
             .export_values()
             .def("__eq__",
-                 [](DistanceMetric const& lhs, DistanceMetric const& rhs) { return lhs == rhs; });
+                 [](DistanceMetric const& lhs, DistanceMetric const& rhs) { return lhs == rhs; })
+            .def("__repr__", [](DistanceMetric metric) {
+                nb::object member = nb::cast(metric);
+                return "<DistanceMetric." + nb::cast<std::string>(member.attr("name")) + ": " +
+                       std::to_string(nb::cast<int>(member.attr("value"))) + ">";
+            });
 
-    py::enum_<CmpOp>(gdd_module, "CmpOp")
+    nb::enum_<CmpOp>(gdd_module, "CmpOp")
             .value("LE", CmpOp::kLe)
             .value("GE", CmpOp::kGe)
             .value("LT", CmpOp::kLt)
@@ -181,35 +183,40 @@ void BindGddVerification(pybind11::module_& main_module) {
             .value("EQ", CmpOp::kEq)
             .value("NE", CmpOp::kNe)
             .export_values()
-            .def("__eq__", [](CmpOp const& lhs, CmpOp const& rhs) { return lhs == rhs; });
+            .def("__eq__", [](CmpOp const& lhs, CmpOp const& rhs) { return lhs == rhs; })
+            .def("__repr__", [](CmpOp op) {
+                nb::object member = nb::cast(op);
+                return "<CmpOp." + nb::cast<std::string>(member.attr("name")) + ": " +
+                       std::to_string(nb::cast<int>(member.attr("value"))) + ">";
+            });
 
-    py::class_<AttrTag>(gdd_module, "AttrTag")
-            .def(py::init<>())
-            .def(py::init<std::string>(), "name"_a)
-            .def_readwrite("name", &AttrTag::name)
+    nb::class_<AttrTag>(gdd_module, "AttrTag")
+            .def(nb::init<>())
+            .def(nb::init<std::string>(), "name"_a)
+            .def_rw("name", &AttrTag::name)
             .def("__eq__", [](AttrTag const& lhs, AttrTag const& rhs) { return lhs == rhs; })
             .def("__repr__", [](AttrTag const& tag) { return Repr(tag); });
 
-    py::class_<RelTag>(gdd_module, "RelTag")
-            .def(py::init<>())
-            .def(py::init<std::string>(), "name"_a)
-            .def_readwrite("name", &RelTag::name)
+    nb::class_<RelTag>(gdd_module, "RelTag")
+            .def(nb::init<>())
+            .def(nb::init<std::string>(), "name"_a)
+            .def_rw("name", &RelTag::name)
             .def("__eq__", [](RelTag const& lhs, RelTag const& rhs) { return lhs == rhs; })
             .def("__repr__", [](RelTag const& tag) { return Repr(tag); });
 
-    py::class_<GddToken>(gdd_module, "GddToken")
-            .def(py::init<>())
-            .def(py::init<std::size_t, TokenField>(), "pattern_vertex_id"_a, "field"_a)
-            .def(py::init([](std::size_t pattern_vertex_id, AttrTag field) {
+    nb::class_<GddToken>(gdd_module, "GddToken")
+            .def(nb::init<>())
+            .def(nb::init<std::size_t, TokenField>(), "pattern_vertex_id"_a, "field"_a)
+            .def(nb::new_([](std::size_t pattern_vertex_id, AttrTag field) {
                      return GddToken{pattern_vertex_id, TokenField{std::move(field)}};
                  }),
                  "pattern_vertex_id"_a, "field"_a)
-            .def(py::init([](std::size_t pattern_vertex_id, RelTag field) {
+            .def(nb::new_([](std::size_t pattern_vertex_id, RelTag field) {
                      return GddToken{pattern_vertex_id, TokenField{std::move(field)}};
                  }),
                  "pattern_vertex_id"_a, "field"_a)
-            .def_readwrite("pattern_vertex_id", &GddToken::pattern_vertex_id)
-            .def_readwrite("field", &GddToken::field)
+            .def_rw("pattern_vertex_id", &GddToken::pattern_vertex_id)
+            .def_rw("field", &GddToken::field)
             .def("__eq__", [](GddToken const& lhs, GddToken const& rhs) { return lhs == rhs; })
             .def("__repr__", [](GddToken const& token) { return Repr(token); })
             .def("is_attr_tag",
@@ -221,12 +228,12 @@ void BindGddVerification(pybind11::module_& main_module) {
             .def("get_rel_tag",
                  [](GddToken const& token) { return std::get<RelTag>(token.field); });
 
-    py::class_<DistanceConstraint>(gdd_module, "DistanceConstraint")
-            .def(py::init<>())
-            .def(py::init<DistanceOperand, DistanceOperand, double, DistanceMetric, CmpOp>(),
+    nb::class_<DistanceConstraint>(gdd_module, "DistanceConstraint")
+            .def(nb::init<>())
+            .def(nb::init<DistanceOperand, DistanceOperand, double, DistanceMetric, CmpOp>(),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](GddToken lhs, GddToken rhs, double threshold, DistanceMetric metric,
+            .def(nb::new_([](GddToken lhs, GddToken rhs, double threshold, DistanceMetric metric,
                              CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{std::move(lhs)},
@@ -238,7 +245,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](GddToken lhs, std::int64_t rhs, double threshold,
+            .def(nb::new_([](GddToken lhs, std::int64_t rhs, double threshold,
                              DistanceMetric metric, CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{std::move(lhs)},
@@ -250,7 +257,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](GddToken lhs, double rhs, double threshold, DistanceMetric metric,
+            .def(nb::new_([](GddToken lhs, double rhs, double threshold, DistanceMetric metric,
                              CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{std::move(lhs)},
@@ -262,7 +269,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](GddToken lhs, std::string rhs, double threshold, DistanceMetric metric,
+            .def(nb::new_([](GddToken lhs, std::string rhs, double threshold, DistanceMetric metric,
                              CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{std::move(lhs)},
@@ -274,7 +281,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](std::int64_t lhs, GddToken rhs, double threshold,
+            .def(nb::new_([](std::int64_t lhs, GddToken rhs, double threshold,
                              DistanceMetric metric, CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{ConstValue{lhs}},
@@ -286,7 +293,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](double lhs, GddToken rhs, double threshold, DistanceMetric metric,
+            .def(nb::new_([](double lhs, GddToken rhs, double threshold, DistanceMetric metric,
                              CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{ConstValue{lhs}},
@@ -298,7 +305,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](std::string lhs, GddToken rhs, double threshold, DistanceMetric metric,
+            .def(nb::new_([](std::string lhs, GddToken rhs, double threshold, DistanceMetric metric,
                              CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{ConstValue{std::move(lhs)}},
@@ -310,7 +317,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](std::int64_t lhs, std::int64_t rhs, double threshold,
+            .def(nb::new_([](std::int64_t lhs, std::int64_t rhs, double threshold,
                              DistanceMetric metric, CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{ConstValue{lhs}},
@@ -322,7 +329,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](double lhs, double rhs, double threshold, DistanceMetric metric,
+            .def(nb::new_([](double lhs, double rhs, double threshold, DistanceMetric metric,
                              CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{ConstValue{lhs}},
@@ -334,7 +341,7 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def(py::init([](std::string lhs, std::string rhs, double threshold,
+            .def(nb::new_([](std::string lhs, std::string rhs, double threshold,
                              DistanceMetric metric, CmpOp op) {
                      return DistanceConstraint{
                              DistanceOperand{ConstValue{std::move(lhs)}},
@@ -346,11 +353,11 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "lhs"_a, "rhs"_a, "threshold"_a, "metric"_a, "op"_a)
 
-            .def_readwrite("lhs", &DistanceConstraint::lhs)
-            .def_readwrite("rhs", &DistanceConstraint::rhs)
-            .def_readwrite("threshold", &DistanceConstraint::threshold)
-            .def_readwrite("metric", &DistanceConstraint::metric)
-            .def_readwrite("op", &DistanceConstraint::op)
+            .def_rw("lhs", &DistanceConstraint::lhs)
+            .def_rw("rhs", &DistanceConstraint::rhs)
+            .def_rw("threshold", &DistanceConstraint::threshold)
+            .def_rw("metric", &DistanceConstraint::metric)
+            .def_rw("op", &DistanceConstraint::op)
 
             .def("__eq__", [](DistanceConstraint const& lhs,
                               DistanceConstraint const& rhs) { return lhs == rhs; })
@@ -360,19 +367,18 @@ void BindGddVerification(pybind11::module_& main_module) {
                        ", op=" + Repr(c.op) + ")";
             });
 
-    py::class_<GddCounterexampleVertex>(gdd_module, "GddCounterexampleMatchEntry")
+    nb::class_<GddCounterexampleVertex>(gdd_module, "GddCounterexampleMatchEntry")
             .def("__repr__", [](GddCounterexampleVertex const& v) { return Repr(v); })
-            .def_readonly("pattern_vertex_id", &GddCounterexampleVertex::pattern_vertex_id)
-            .def_readonly("pattern_vertex_label", &GddCounterexampleVertex::pattern_vertex_label)
-            .def_readonly("graph_vertex_id", &GddCounterexampleVertex::graph_vertex_id)
-            .def_readonly("graph_vertex_label", &GddCounterexampleVertex::graph_vertex_label)
-            .def_readonly("graph_vertex_attributes",
-                          &GddCounterexampleVertex::graph_vertex_attributes);
+            .def_ro("pattern_vertex_id", &GddCounterexampleVertex::pattern_vertex_id)
+            .def_ro("pattern_vertex_label", &GddCounterexampleVertex::pattern_vertex_label)
+            .def_ro("graph_vertex_id", &GddCounterexampleVertex::graph_vertex_id)
+            .def_ro("graph_vertex_label", &GddCounterexampleVertex::graph_vertex_label)
+            .def_ro("graph_vertex_attributes", &GddCounterexampleVertex::graph_vertex_attributes);
 
-    py::class_<GddCounterexample>(gdd_module, "GddCounterexample")
+    nb::class_<GddCounterexample>(gdd_module, "GddCounterexample")
             .def("__repr__", [](GddCounterexample const& ce) { return Repr(ce); })
-            .def_readonly("gdd_index", &GddCounterexample::gdd_index)
-            .def_readonly("match", &GddCounterexample::match);
+            .def_ro("gdd_index", &GddCounterexample::gdd_index)
+            .def_ro("match", &GddCounterexample::match);
 
     gdd_module.def(
             "AttrConst",
@@ -482,8 +488,8 @@ void BindGddVerification(pybind11::module_& main_module) {
             },
             "pid1"_a, "relation1"_a, "pid2"_a, "relation2"_a);
 
-    py::class_<Gdd>(gdd_module, "Gdd")
-            .def(py::init([](std::string const& pattern_dot, std::vector<DistanceConstraint> lhs,
+    nb::class_<Gdd>(gdd_module, "Gdd")
+            .def(nb::new_([](std::string const& pattern_dot, std::vector<DistanceConstraint> lhs,
                              std::vector<DistanceConstraint> rhs) {
                      std::stringstream ss(pattern_dot);
                      graph_t pattern = parser::graph_parser::gdd::ReadGraph(ss);
@@ -491,8 +497,8 @@ void BindGddVerification(pybind11::module_& main_module) {
                  }),
                  "pattern_dot"_a, "lhs"_a, "rhs"_a)
 
-            .def_property_readonly("lhs", [](Gdd const& gdd) { return gdd.GetLhs(); })
-            .def_property_readonly("rhs", [](Gdd const& gdd) { return gdd.GetRhs(); })
+            .def_prop_ro("lhs", [](Gdd const& gdd) { return gdd.GetLhs(); })
+            .def_prop_ro("rhs", [](Gdd const& gdd) { return gdd.GetRhs(); })
 
             .def("__repr__",
                  [](Gdd const& gdd) {
@@ -520,7 +526,7 @@ void BindGddVerification(pybind11::module_& main_module) {
             },
             "pattern_dot_file"_a, "lhs"_a, "rhs"_a);
 
-    py::class_<GddValidator, Algorithm>(gdd_module, "GddValidator")
+    nb::class_<GddValidator, Algorithm>(gdd_module, "GddValidator")
             .def("get_result", &GddValidator::GetResult)
             .def("get_matches_count", &GddValidator::GetMatchesCount)
             .def("get_counterexamples", &GddValidator::GetCounterexamples);

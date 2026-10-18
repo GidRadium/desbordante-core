@@ -1,4 +1,4 @@
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,15 +11,13 @@
 #include <utility>
 #include <vector>
 
-#include <pybind11/stl.h>
-
 #include "core/algorithms/nar/des/des.h"
 #include "core/algorithms/nar/nar.h"
 #include "core/algorithms/nar/value_range.h"
 #include "python_bindings/py_util/bind_primitive.h"
 #include "python_bindings/py_util/vector_to_tuple.h"
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
 namespace {
 constexpr double kRoundingValue = 1e9;
@@ -28,21 +26,21 @@ constexpr double kRoundingValue = 1e9;
 namespace nar_serialization {
 using NAR = model::NAR;
 
-py::object SerializeValueRange(std::shared_ptr<model::ValueRange> const& vr) {
+nb::object SerializeValueRange(std::shared_ptr<model::ValueRange> const& vr) {
     switch (auto const type_id = vr->GetTypeId()) {
         case model::TypeId::kString: {
             auto svr = std::dynamic_pointer_cast<model::StringValueRange>(vr);
-            return py::make_tuple(magic_enum::enum_integer(type_id), svr->domain);
+            return nb::make_tuple(magic_enum::enum_integer(type_id), svr->domain);
         }
         case model::TypeId::kDouble: {
             auto nvr = std::dynamic_pointer_cast<model::NumericValueRange<model::Double>>(vr);
-            return py::make_tuple(magic_enum::enum_integer(type_id),
-                                  py::make_tuple(nvr->lower_bound, nvr->upper_bound));
+            return nb::make_tuple(magic_enum::enum_integer(type_id),
+                                  nb::make_tuple(nvr->lower_bound, nvr->upper_bound));
         }
         case model::TypeId::kInt: {
             auto nvr = std::dynamic_pointer_cast<model::NumericValueRange<model::Int>>(vr);
-            return py::make_tuple(magic_enum::enum_integer(type_id),
-                                  py::make_tuple(nvr->lower_bound, nvr->upper_bound));
+            return nb::make_tuple(magic_enum::enum_integer(type_id),
+                                  nb::make_tuple(nvr->lower_bound, nvr->upper_bound));
         }
 
         default:
@@ -53,29 +51,29 @@ py::object SerializeValueRange(std::shared_ptr<model::ValueRange> const& vr) {
     throw std::runtime_error("Unsupported ValueRange type in serialization.");
 }
 
-std::shared_ptr<model::ValueRange> DeserializeValueRange(py::object const& obj) {
-    auto tup = obj.cast<py::tuple>();
+std::shared_ptr<model::ValueRange> DeserializeValueRange(nb::object const& obj) {
+    auto tup = nb::cast<nb::tuple>(obj);
     if (tup.size() != 2) {
         throw std::runtime_error("Invalid ValueRange tuple size!");
     }
-    int type_code = tup[0].cast<int>();
+    int type_code = nb::cast<int>(tup[0]);
     model::TypeId type_id =
             magic_enum::enum_cast<model::TypeId>(type_code).value_or(model::TypeId::kUndefined);
     switch (type_id) {
         case model::TypeId::kString: {
-            auto domain = tup[1].cast<std::vector<std::string>>();
+            auto domain = nb::cast<std::vector<std::string>>(tup[1]);
             return std::make_shared<model::StringValueRange>(std::move(domain));
         }
         case model::TypeId::kDouble: {
-            auto bounds = tup[1].cast<py::tuple>();
-            model::Double lb = bounds[0].cast<model::Double>();
-            model::Double ub = bounds[1].cast<model::Double>();
+            auto bounds = nb::cast<nb::tuple>(tup[1]);
+            model::Double lb = nb::cast<model::Double>(bounds[0]);
+            model::Double ub = nb::cast<model::Double>(bounds[1]);
             return std::make_shared<model::NumericValueRange<model::Double>>(lb, ub);
         }
         case model::TypeId::kInt: {
-            auto bounds = tup[1].cast<py::tuple>();
-            model::Int lb = bounds[0].cast<model::Int>();
-            model::Int ub = bounds[1].cast<model::Int>();
+            auto bounds = nb::cast<nb::tuple>(tup[1]);
+            model::Int lb = nb::cast<model::Int>(bounds[0]);
+            model::Int ub = nb::cast<model::Int>(bounds[1]);
             return std::make_shared<model::NumericValueRange<model::Int>>(lb, ub);
         }
         default: {
@@ -84,44 +82,44 @@ std::shared_ptr<model::ValueRange> DeserializeValueRange(py::object const& obj) 
     }
 }
 
-py::dict SerializeRangeMap(
+nb::dict SerializeRangeMap(
         std::unordered_map<size_t, std::shared_ptr<model::ValueRange>> const& map) {
-    py::dict d;
+    nb::dict d;
     for (auto const& [feature_idx, vr_ptr] : map) {
-        d[py::int_(feature_idx)] = SerializeValueRange(vr_ptr);
+        d[nb::int_(feature_idx)] = SerializeValueRange(vr_ptr);
     }
     return d;
 }
 
-py::tuple SerializeNar(NAR const& nar) {
+nb::tuple SerializeNar(NAR const& nar) {
     auto quals = nar.GetQualities();
-    py::dict ante_dict = nar_serialization::SerializeRangeMap(nar.GetAnte());
-    py::dict cons_dict = nar_serialization::SerializeRangeMap(nar.GetCons());
-    return py::make_tuple(quals.fitness, quals.support, quals.confidence,
+    nb::dict ante_dict = nar_serialization::SerializeRangeMap(nar.GetAnte());
+    nb::dict cons_dict = nar_serialization::SerializeRangeMap(nar.GetCons());
+    return nb::make_tuple(quals.fitness, quals.support, quals.confidence,
                           nar.IsQualitiesConsistent(), std::move(ante_dict), std::move(cons_dict));
 }
 
 std::unordered_map<size_t, std::shared_ptr<model::ValueRange>> DeserializeRangeMap(
-        py::dict const& d) {
+        nb::dict const& d) {
     std::unordered_map<size_t, std::shared_ptr<model::ValueRange>> map;
     for (auto item : d) {
-        auto feature_idx = item.first.cast<size_t>();
-        auto vr = DeserializeValueRange(py::reinterpret_borrow<py::object>(item.second));
+        auto feature_idx = nb::cast<size_t>(item.first);
+        auto vr = DeserializeValueRange(nb::borrow<nb::object>(item.second));
         map[feature_idx] = vr;
     }
     return map;
 }
 
-NAR DeserializeNar(py::tuple t) {
+NAR DeserializeNar(nb::tuple t) {
     if (t.size() != 6) {
         throw std::runtime_error("Invalid state for NAR pickle!");
     }
-    double fitness = t[0].cast<double>();
-    double support = t[1].cast<double>();
-    double confidence = t[2].cast<double>();
-    bool qualities_consistent = t[3].cast<bool>();
-    py::dict ante_dict = t[4].cast<py::dict>();
-    py::dict cons_dict = t[5].cast<py::dict>();
+    double fitness = nb::cast<double>(t[0]);
+    double support = nb::cast<double>(t[1]);
+    double confidence = nb::cast<double>(t[2]);
+    bool qualities_consistent = nb::cast<bool>(t[3]);
+    nb::dict ante_dict = nb::cast<nb::dict>(t[4]);
+    nb::dict cons_dict = nb::cast<nb::dict>(t[5]);
     NAR nar;
     std::unordered_map<size_t, std::shared_ptr<model::ValueRange>> ante_map =
             nar_serialization::DeserializeRangeMap(ante_dict);
@@ -138,24 +136,24 @@ NAR DeserializeNar(py::tuple t) {
     return nar;
 }
 
-py::tuple ConvertValueRangeToImmutableTuple(std::shared_ptr<model::ValueRange> const& vr) {
+nb::tuple ConvertValueRangeToImmutableTuple(std::shared_ptr<model::ValueRange> const& vr) {
     auto const type_code = vr->GetTypeId();
     switch (type_code) {
         case model::TypeId::kString: {
             auto svr = std::dynamic_pointer_cast<model::StringValueRange>(vr);
-            py::tuple domain_tuple = python_bindings::VectorToTuple(svr->domain);
+            nb::tuple domain_tuple = python_bindings::VectorToTuple(svr->domain);
 
-            return py::make_tuple(magic_enum::enum_integer(type_code), domain_tuple);
+            return nb::make_tuple(magic_enum::enum_integer(type_code), domain_tuple);
         }
         case model::TypeId::kDouble: {
             auto nvr = std::dynamic_pointer_cast<model::NumericValueRange<model::Double>>(vr);
-            return py::make_tuple(magic_enum::enum_integer(type_code),
-                                  py::make_tuple(nvr->lower_bound, nvr->upper_bound));
+            return nb::make_tuple(magic_enum::enum_integer(type_code),
+                                  nb::make_tuple(nvr->lower_bound, nvr->upper_bound));
         }
         case model::TypeId::kInt: {
             auto nvr = std::dynamic_pointer_cast<model::NumericValueRange<model::Int>>(vr);
-            return py::make_tuple(magic_enum::enum_integer(type_code),
-                                  py::make_tuple(nvr->lower_bound, nvr->upper_bound));
+            return nb::make_tuple(magic_enum::enum_integer(type_code),
+                                  nb::make_tuple(nvr->lower_bound, nvr->upper_bound));
         }
         default: {
             throw std::runtime_error("Unsupported ValueRange type to hash.");
@@ -163,7 +161,7 @@ py::tuple ConvertValueRangeToImmutableTuple(std::shared_ptr<model::ValueRange> c
     }
 }
 
-py::tuple ConvertRangeMapToImmutableTuple(
+nb::tuple ConvertRangeMapToImmutableTuple(
         std::unordered_map<size_t, std::shared_ptr<model::ValueRange>> const& map) {
     std::vector<std::pair<size_t, std::shared_ptr<model::ValueRange>>> sorted_ranges;
     sorted_ranges.reserve(map.size());
@@ -174,17 +172,17 @@ py::tuple ConvertRangeMapToImmutableTuple(
         return elem1.first < elem2.first;
     });
     return python_bindings::VectorToTuple(sorted_ranges, [](auto const& elem) {
-        return py::make_tuple(elem.first, ConvertValueRangeToImmutableTuple(elem.second));
+        return nb::make_tuple(elem.first, ConvertValueRangeToImmutableTuple(elem.second));
     });
 }
 
-py::tuple ConvertNarToImmutableTuple(NAR const& nar) {
-    py::tuple ante_tuple = ConvertRangeMapToImmutableTuple(nar.GetAnte());
-    py::tuple cons_tuple = ConvertRangeMapToImmutableTuple(nar.GetCons());
+nb::tuple ConvertNarToImmutableTuple(NAR const& nar) {
+    nb::tuple ante_tuple = ConvertRangeMapToImmutableTuple(nar.GetAnte());
+    nb::tuple cons_tuple = ConvertRangeMapToImmutableTuple(nar.GetCons());
 
     bool is_consistent = nar.IsQualitiesConsistent();
     if (!is_consistent) {
-        return py::make_tuple(std::move(ante_tuple), std::move(cons_tuple), is_consistent);
+        return nb::make_tuple(std::move(ante_tuple), std::move(cons_tuple), is_consistent);
     }
     auto const& qualities = nar.GetQualities();
 
@@ -192,7 +190,7 @@ py::tuple ConvertNarToImmutableTuple(NAR const& nar) {
         return std::round(d * kRoundingValue) / kRoundingValue;
     };
 
-    return py::make_tuple(std::move(ante_tuple), std::move(cons_tuple), is_consistent,
+    return nb::make_tuple(std::move(ante_tuple), std::move(cons_tuple), is_consistent,
                           round_double_val(qualities.fitness), round_double_val(qualities.support),
                           round_double_val(qualities.confidence));
 }
@@ -201,71 +199,67 @@ py::tuple ConvertNarToImmutableTuple(NAR const& nar) {
 
 namespace python_bindings {
 
-void BindNar(py::module_& main_module) {
+void BindNar(nb::module_& main_module) {
     using namespace algos;
     using namespace algos::des;
     using namespace model;
 
     auto nar_module = main_module.def_submodule("nar");
 
-    py::class_<ValueRange, std::shared_ptr<ValueRange>>(nar_module, "ValueRange")
+    nb::class_<ValueRange>(nar_module, "ValueRange")
             .def("__str__", &ValueRange::ToString)
-            .def_property_readonly("type", &ValueRange::GetTypeId);
+            .def_prop_ro("type", &ValueRange::GetTypeId);
 
-    py::class_<StringValueRange, ValueRange, std::shared_ptr<StringValueRange>>(nar_module,
-                                                                                "StringValueRange")
+    nb::class_<StringValueRange, ValueRange>(nar_module, "StringValueRange")
             .def("__str__", &StringValueRange::ToString)
-            .def_readonly("string", &StringValueRange::domain);
+            .def_ro("string", &StringValueRange::domain);
 
-    py::class_<NumericValueRange<Double>, ValueRange, std::shared_ptr<NumericValueRange<Double>>>(
-            nar_module, "FloatValueRange")
+    nb::class_<NumericValueRange<Double>, ValueRange>(nar_module, "FloatValueRange")
             .def("__str__", &NumericValueRange<Double>::ToString)
-            .def_readonly("lower_bound", &NumericValueRange<Double>::lower_bound)
-            .def_readonly("upper_bound", &NumericValueRange<Double>::upper_bound);
+            .def_ro("lower_bound", &NumericValueRange<Double>::lower_bound)
+            .def_ro("upper_bound", &NumericValueRange<Double>::upper_bound);
 
-    py::class_<NumericValueRange<Int>, ValueRange, std::shared_ptr<NumericValueRange<Int>>>(
-            nar_module, "IntValueRange")
+    nb::class_<NumericValueRange<Int>, ValueRange>(nar_module, "IntValueRange")
             .def("__str__", &NumericValueRange<Int>::ToString)
-            .def_readonly("lower_bound", &NumericValueRange<Int>::lower_bound)
-            .def_readonly("upper_bound", &NumericValueRange<Int>::upper_bound);
+            .def_ro("lower_bound", &NumericValueRange<Int>::lower_bound)
+            .def_ro("upper_bound", &NumericValueRange<Int>::upper_bound);
 
-    py::class_<NARQualities>(nar_module, "NarQualities")
+    nb::class_<NARQualities>(nar_module, "NarQualities")
             .def("__str__", &NARQualities::ToString)
-            .def_readonly("support", &NARQualities::support)
-            .def_readonly("confidence", &NARQualities::confidence)
-            .def_readonly("fitness", &NARQualities::fitness);
+            .def_ro("support", &NARQualities::support)
+            .def_ro("confidence", &NARQualities::confidence)
+            .def_ro("fitness", &NARQualities::fitness);
 
-    py::class_<NAR>(nar_module, "NAR")
+    nb::class_<NAR>(nar_module, "NAR")
             .def("__str__", &NAR::ToString)
-            .def_property_readonly("qualities", &NAR::GetQualities)
-            .def_property_readonly("support", [](NAR const& n) { return n.GetQualities().support; })
-            .def_property_readonly("confidence",
-                                   [](NAR const& n) { return n.GetQualities().confidence; })
-            .def_property_readonly("fitness", [](NAR const& n) { return n.GetQualities().fitness; })
-            .def_property_readonly("ante", &NAR::GetAnte)
-            .def_property_readonly("cons", &NAR::GetCons)
+            .def_prop_ro("qualities", &NAR::GetQualities)
+            .def_prop_ro("support", [](NAR const& n) { return n.GetQualities().support; })
+            .def_prop_ro("confidence", [](NAR const& n) { return n.GetQualities().confidence; })
+            .def_prop_ro("fitness", [](NAR const& n) { return n.GetQualities().fitness; })
+            .def_prop_ro("ante", &NAR::GetAnte)
+            .def_prop_ro("cons", &NAR::GetCons)
             .def("__eq__",
                  [](NAR const& nar1, NAR const& nar2) {
                      if (&nar1 == &nar2) {
                          return true;
                      }
-                     py::tuple nar1_state_tuple =
+                     nb::tuple nar1_state_tuple =
                              nar_serialization::ConvertNarToImmutableTuple(nar1);
-                     py::tuple nar2_state_tuple =
+                     nb::tuple nar2_state_tuple =
                              nar_serialization::ConvertNarToImmutableTuple(nar2);
 
                      return nar1_state_tuple.equal(nar2_state_tuple);
                  })
             .def("__hash__",
                  [](NAR const& nar) {
-                     py::tuple state_tuple = nar_serialization::ConvertNarToImmutableTuple(nar);
-                     return py::hash(state_tuple);
+                     nb::tuple state_tuple = nar_serialization::ConvertNarToImmutableTuple(nar);
+                     return nb::hash(state_tuple);
                  })
-            .def(py::pickle(
-                    // __getstate__
-                    [](NAR const& nar) { return nar_serialization::SerializeNar(nar); },
-                    // __setstate__
-                    [](py::tuple t) { return nar_serialization::DeserializeNar(t); }));
+            .def("__getstate__",
+                 [](NAR const& nar) { return nar_serialization::SerializeNar(nar); })
+            .def("__setstate__", [](NAR& nar, nb::tuple t) {
+                new (&nar) NAR(nar_serialization::DeserializeNar(t));
+            });
 
     BindPrimitive<DES>(nar_module, &NARAlgorithm::GetNARVector, "NarAlgorithm", "get_nars",
                        {"DES"});

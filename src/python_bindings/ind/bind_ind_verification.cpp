@@ -1,8 +1,6 @@
 #include "python_bindings/ind/bind_ind_verification.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/ind/ind.h"
 #include "core/algorithms/ind/ind_verifier/ind_verifier.h"
@@ -10,11 +8,11 @@
 #include "python_bindings/py_util/bind_primitive.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindIndVerification(pybind11::module_& main_module) {
+void BindIndVerification(nb::module_& main_module) {
     using namespace algos;
 
     auto ind_verification_module = main_module.def_submodule("ind_verification");
@@ -22,9 +20,9 @@ void BindIndVerification(pybind11::module_& main_module) {
     BindPrimitiveNoBase<INDVerifier>(ind_verification_module, "INDVerifier")
             .def("validate_ind",
                  [](INDVerifier& verifier, model::IND& ind) {
-                     py::dict kwargs;
-                     kwargs["lhs_indices"] = py::cast(ind.GetLhs().GetColumnIndices());
-                     kwargs["rhs_indices"] = py::cast(ind.GetRhs().GetColumnIndices());
+                     nb::dict kwargs;
+                     kwargs["lhs_indices"] = nb::cast(ind.GetLhs().GetColumnIndices());
+                     kwargs["rhs_indices"] = nb::cast(ind.GetRhs().GetColumnIndices());
                      configure_algorithm::ConfigureAlgo(verifier, kwargs);
                      verifier.Execute();
                  })

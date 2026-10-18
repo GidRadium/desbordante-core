@@ -1,12 +1,10 @@
 #include "python_bindings/sfd/bind_sfd.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <memory>
 #include <stdexcept>
 #include <utility>
-
-#include <pybind11/stl.h>
 
 #include "core/algorithms/fd/sfd/cords.h"
 #include "core/algorithms/fd/sfd/correlation.h"
@@ -14,24 +12,24 @@
 #include "python_bindings/py_util/table_serialization.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 
-py::tuple SerializeCorrelation(algos::Correlation const& corr) {
-    py::tuple lhs_state = table_serialization::SerializeColumn(corr.GetLhs());
-    py::tuple rhs_state = table_serialization::SerializeColumn(corr.GetRhs());
-    return py::make_tuple(std::move(lhs_state), std::move(rhs_state));
+nb::tuple SerializeCorrelation(algos::Correlation const& corr) {
+    nb::tuple lhs_state = table_serialization::SerializeColumn(corr.GetLhs());
+    nb::tuple rhs_state = table_serialization::SerializeColumn(corr.GetRhs());
+    return nb::make_tuple(std::move(lhs_state), std::move(rhs_state));
 }
 
-algos::Correlation DeserializeCorrelation(py::tuple t) {
+algos::Correlation DeserializeCorrelation(nb::tuple t) {
     if (t.size() != 2) {
         throw std::runtime_error("Invalid state for Correlation pickle!");
     }
     std::shared_ptr<RelationalSchema> dummy_schema =
             std::make_shared<RelationalSchema>("__dummy__", std::vector<std::string>{});
     Column lhs_col =
-            table_serialization::DeserializeColumn(t[0].cast<py::tuple>(), dummy_schema.get());
+            table_serialization::DeserializeColumn(nb::cast<nb::tuple>(t[0]), dummy_schema.get());
     Column rhs_col =
-            table_serialization::DeserializeColumn(t[1].cast<py::tuple>(), dummy_schema.get());
+            table_serialization::DeserializeColumn(nb::cast<nb::tuple>(t[1]), dummy_schema.get());
     return algos::Correlation(std::move(lhs_col), std::move(rhs_col));
 }
 
@@ -39,13 +37,13 @@ algos::Correlation DeserializeCorrelation(py::tuple t) {
 
 namespace python_bindings {
 
-void BindSFD(py::module_& main_module) {
+void BindSFD(nb::module_& main_module) {
     using namespace algos;
     auto sfd_module = main_module.def_submodule("sfd");
 
     // NOTE: technically `Correlation` will contain an invalid pointer to the schema if the
     // algorithm object is destroyed, but we do not use the schema anywhere.
-    py::class_<Correlation>(sfd_module, "Correlation")
+    nb::class_<Correlation>(sfd_module, "Correlation")
             .def("__str__", &Correlation::ToString)
             .def("to_string", &Correlation::ToString)
             .def("GetLhsIndex", &Correlation::GetLhsIndex)
@@ -57,27 +55,25 @@ void BindSFD(py::module_& main_module) {
                      if (&corr1 == &corr2) {
                          return true;
                      }
-                     py::tuple corr1_state_tuple = SerializeCorrelation(corr1);
-                     py::tuple corr2_state_tuple = SerializeCorrelation(corr2);
+                     nb::tuple corr1_state_tuple = SerializeCorrelation(corr1);
+                     nb::tuple corr2_state_tuple = SerializeCorrelation(corr2);
 
                      return corr1_state_tuple.equal(corr2_state_tuple);
                  })
             .def("__hash__",
                  [](Correlation const& corr) {
-                     py::tuple corr_state_tuple = SerializeCorrelation(corr);
-                     return py::hash(corr_state_tuple);
+                     nb::tuple corr_state_tuple = SerializeCorrelation(corr);
+                     return nb::hash(corr_state_tuple);
                  })
-            .def(py::pickle(
-                    // __getstate__
-                    [](Correlation const& corr) { return SerializeCorrelation(corr); },
-                    // __setstate__
-                    [](py::tuple t) { return DeserializeCorrelation(t); }));
+            .def("__getstate__", [](Correlation const& corr) { return SerializeCorrelation(corr); })
+            .def("__setstate__", [](Correlation& corr, nb::tuple t) {
+                new (&corr) Correlation(DeserializeCorrelation(t));
+            });
 
     auto sfd_algorithms_module = sfd_module.def_submodule("algorithms");
-    auto cls = py::class_<Cords, FDAlgorithm>(sfd_algorithms_module, "SFDAlgorithm")
-                       .def(py::init<>())
-                       .def("get_correlations", &Cords::GetCorrelations,
-                            py::return_value_policy::copy);
+    auto cls = nb::class_<Cords, FDAlgorithm>(sfd_algorithms_module, "SFDAlgorithm")
+                       .def(nb::init<>())
+                       .def("get_correlations", &Cords::GetCorrelations, nb::rv_policy::copy);
     sfd_algorithms_module.attr("Default") = cls;
 }
 }  // namespace python_bindings

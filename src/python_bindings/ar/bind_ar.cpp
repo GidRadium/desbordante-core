@@ -1,75 +1,69 @@
 #include "python_bindings/ar/bind_ar.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/ar/apriori/apriori.h"
 #include "core/algorithms/ar/ar.h"
 #include "python_bindings/py_util/bind_primitive.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindAr(py::module_& main_module) {
+void BindAr(nb::module_& main_module) {
     using namespace algos;
     using model::ArIDs;
     using model::ARStrings;
 
     auto ar_module = main_module.def_submodule("ar");
-    py::class_<ARStrings>(ar_module, "ARStrings")
+    nb::class_<ARStrings>(ar_module, "ARStrings")
             .def("__str__", &ARStrings::ToString)
-            .def_readonly("left", &ARStrings::left)
-            .def_readonly("right", &ARStrings::right)
-            .def_readonly("confidence", &ARStrings::confidence)
-            .def_readonly("support", &ARStrings::support)
-            .def(py::pickle(
-                    // __getstate__
-                    [](ARStrings const& ars) {
-                        std::vector<std::string> left_vec(ars.left.begin(), ars.left.end());
-                        std::vector<std::string> right_vec(ars.right.begin(), ars.right.end());
-                        return py::make_tuple(std::move(left_vec), std::move(right_vec),
-                                              ars.confidence, ars.support);
-                    },
-                    // __setstate__
-                    [](py::tuple t) {
-                        if (t.size() != 4) {
-                            throw std::runtime_error("Invalid state for ARStrings pickle!");
-                        }
-                        auto left_vec = t[0].cast<std::vector<std::string>>();
-                        auto right_vec = t[1].cast<std::vector<std::string>>();
-                        double conf = t[2].cast<double>();
-                        double supp = t[3].cast<double>();
-                        return ARStrings(std::move(left_vec), std::move(right_vec), conf, supp);
-                    }));
+            .def_ro("left", &ARStrings::left)
+            .def_ro("right", &ARStrings::right)
+            .def_ro("confidence", &ARStrings::confidence)
+            .def_ro("support", &ARStrings::support)
+            .def("__getstate__",
+                 [](ARStrings const& ars) {
+                     std::vector<std::string> left_vec(ars.left.begin(), ars.left.end());
+                     std::vector<std::string> right_vec(ars.right.begin(), ars.right.end());
+                     return nb::make_tuple(std::move(left_vec), std::move(right_vec),
+                                           ars.confidence, ars.support);
+                 })
+            .def("__setstate__", [](ARStrings& ars, nb::tuple t) {
+                if (t.size() != 4) {
+                    throw std::runtime_error("Invalid state for ARStrings pickle!");
+                }
+                auto left_vec = nb::cast<std::vector<std::string>>(t[0]);
+                auto right_vec = nb::cast<std::vector<std::string>>(t[1]);
+                double conf = nb::cast<double>(t[2]);
+                double supp = nb::cast<double>(t[3]);
+                new (&ars) ARStrings(std::move(left_vec), std::move(right_vec), conf, supp);
+            });
 
-    py::class_<ArIDs>(ar_module, "ArIDs")
-            .def_readonly("left", &ArIDs::left)
-            .def_readonly("right", &ArIDs::right)
-            .def_readonly("confidence", &ArIDs::confidence)
-            .def_readonly("support", &ArIDs::support)
-            .def(py::pickle(
-                    // __getstate__
-                    [](ArIDs const& arids) {
-                        return py::make_tuple(arids.left, arids.right, arids.confidence,
-                                              arids.support);
-                    },
-                    // __setstate__
-                    [](py::tuple t) {
-                        if (t.size() != 4) {
-                            throw std::runtime_error("Invalid state for ArIDs pickle!");
-                        }
-                        auto left = t[0].cast<std::vector<unsigned>>();
-                        auto right = t[1].cast<std::vector<unsigned>>();
-                        double conf = t[2].cast<double>();
-                        double supp = t[3].cast<double>();
-                        return ArIDs(std::move(left), std::move(right), conf, supp);
-                    }));
+    nb::class_<ArIDs>(ar_module, "ArIDs")
+            .def_ro("left", &ArIDs::left)
+            .def_ro("right", &ArIDs::right)
+            .def_ro("confidence", &ArIDs::confidence)
+            .def_ro("support", &ArIDs::support)
+            .def("__getstate__",
+                 [](ArIDs const& arids) {
+                     return nb::make_tuple(arids.left, arids.right, arids.confidence,
+                                           arids.support);
+                 })
+            .def("__setstate__", [](ArIDs& arids, nb::tuple t) {
+                if (t.size() != 4) {
+                    throw std::runtime_error("Invalid state for ArIDs pickle!");
+                }
+                auto left = nb::cast<std::vector<unsigned>>(t[0]);
+                auto right = nb::cast<std::vector<unsigned>>(t[1]);
+                double conf = nb::cast<double>(t[2]);
+                double supp = nb::cast<double>(t[3]);
+                new (&arids) ArIDs(std::move(left), std::move(right), conf, supp);
+            });
 
-    py::class_<ARAlgorithm, Algorithm>(ar_module, "ArAlgorithm")
-            .def("get_ars", &ARAlgorithm::GetArStringsList, py::return_value_policy::move)
+    nb::class_<ARAlgorithm, Algorithm>(ar_module, "ArAlgorithm")
+            .def("get_ars", &ARAlgorithm::GetArStringsList, nb::rv_policy::move)
             .def("get_itemnames", &ARAlgorithm::GetItemNamesVector)
             .def("get_ar_ids", &ARAlgorithm::GetArIDsList);
 

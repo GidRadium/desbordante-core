@@ -1,12 +1,10 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <algorithm>
 #include <stdexcept>
 #include <string>
-
-#include <pybind11/stl.h>
 
 #include "core/algorithms/md/hymd/lowest_bound.h"
 #include "core/algorithms/md/hymd/lowest_cc_value_id.h"
@@ -19,8 +17,8 @@ namespace python_bindings {
 namespace detail {
 class StrTransform {
 public:
-    pybind11::object operator()(std::string const& string) const {
-        return pybind11::str(string);
+    nb::object operator()(std::string const& string) const {
+        return nb::str(string.c_str(), string.size());
     }
 };
 
@@ -32,13 +30,12 @@ using PyGenericTypeTransformer =
 
 class PyComparerCreator {
     struct Comparer {
-        pybind11::object comparison_function_;
+        nb::object comparison_function_;
         algos::hymd::preprocessing::Similarity min_sim_;
 
-        algos::hymd::preprocessing::Similarity operator()(pybind11::object const& l,
-                                                          pybind11::object const& r) {
-            auto sim = pybind11::cast<algos::hymd::preprocessing::Similarity>(
-                    comparison_function_(l, r));
+        algos::hymd::preprocessing::Similarity operator()(nb::object const& l,
+                                                          nb::object const& r) {
+            auto sim = nb::cast<algos::hymd::preprocessing::Similarity>(comparison_function_(l, r));
             if (!(0.0 <= sim && sim <= 1.0))
                 throw std::domain_error("Similarity must be in the [0.0, 1.0] range, but is " +
                                         std::to_string(sim));
@@ -46,11 +43,11 @@ class PyComparerCreator {
         }
     };
 
-    pybind11::object comparison_function_;
+    nb::object comparison_function_;
     algos::hymd::preprocessing::Similarity min_sim_;
 
 public:
-    PyComparerCreator(pybind11::object comparison_function,
+    PyComparerCreator(nb::object comparison_function,
                       algos::hymd::preprocessing::Similarity min_sim)
         : comparison_function_(std::move(comparison_function)), min_sim_(min_sim) {}
 
@@ -60,16 +57,16 @@ public:
 };
 
 class PyComparerCreatorSupplier {
-    pybind11::object comparison_function_;
+    nb::object comparison_function_;
     algos::hymd::preprocessing::Similarity min_sim_;
 
 public:
-    auto operator()(std::vector<pybind11::object> const*, std::vector<pybind11::object> const*,
+    auto operator()(std::vector<nb::object> const*, std::vector<nb::object> const*,
                     algos::hymd::indexes::KeyedPositionListIndex const&) const {
         return PyComparerCreator{comparison_function_, min_sim_};
     }
 
-    PyComparerCreatorSupplier(pybind11::object comparison_function,
+    PyComparerCreatorSupplier(nb::object comparison_function,
                               algos::hymd::preprocessing::Similarity min_sim)
         : comparison_function_(std::move(comparison_function)), min_sim_(min_sim) {}
 };
@@ -95,8 +92,8 @@ public:
           picker_(std::move(picker)) {}
 
     algos::hymd::indexes::ColumnPairMeasurements Calculate(
-            std::vector<pybind11::object> const* left_elements,
-            std::vector<pybind11::object> const* right_elements,
+            std::vector<nb::object> const* left_elements,
+            std::vector<nb::object> const* right_elements,
             algos::hymd::indexes::KeyedPositionListIndex const& right_pli,
             util::WorkerThreadPool* pool_ptr) const {
         if (symmetric_) {
@@ -124,15 +121,14 @@ using ObjMeasureBase = algos::hymd::preprocessing::column_matches::ColumnMatchIm
 }  // namespace detail
 
 class PyLhsCCVIDsPicker {
-    pybind11::object picker_function_;
+    nb::object picker_function_;
 
 public:
-    PyLhsCCVIDsPicker(pybind11::object picker_function)
-        : picker_function_(std::move(picker_function)) {}
+    PyLhsCCVIDsPicker(nb::object picker_function) : picker_function_(std::move(picker_function)) {}
 
     std::vector<algos::hymd::ColumnClassifierValueId> operator()(
             std::vector<algos::hymd::preprocessing::Similarity> const& similarities) {
-        auto lhs_ccv_ids = pybind11::cast<std::vector<algos::hymd::ColumnClassifierValueId>>(
+        auto lhs_ccv_ids = nb::cast<std::vector<algos::hymd::ColumnClassifierValueId>>(
                 picker_function_(similarities));
         auto ccv_ids_end = lhs_ccv_ids.end();
         if (std::adjacent_find(lhs_ccv_ids.begin(), ccv_ids_end, std::greater_equal{}) !=
@@ -158,12 +154,11 @@ using ObjMeasureTransformFuncs = detail::PyGenericTypeTransformer::TransformFunc
 
 class Custom : public detail::ObjMeasureBase {
 public:
-    Custom(pybind11::object comparison_function,
+    Custom(nb::object comparison_function,
            algos::hymd::preprocessing::column_matches::ColumnIdentifier left_column_identifier,
            algos::hymd::preprocessing::column_matches::ColumnIdentifier right_column_identifier,
            ObjMeasureTransformFuncs transform_functions, bool symmetrical, bool equality_is_highest,
-           model::md::DecisionBoundary min_sim, std::string name,
-           pybind11::object lhs_indices_picker)
+           model::md::DecisionBoundary min_sim, std::string name, nb::object lhs_indices_picker)
         : detail::ObjMeasureBase{
                   symmetrical && equality_is_highest,
                   std::move(name),
@@ -174,7 +169,7 @@ public:
                                             PyLhsCCVIDsPicker{std::move(lhs_indices_picker)},
                                             symmetrical, equality_is_highest)} {}
 
-    Custom(pybind11::object comparison_function,
+    Custom(nb::object comparison_function,
            algos::hymd::preprocessing::column_matches::ColumnIdentifier left_column_identifier,
            algos::hymd::preprocessing::column_matches::ColumnIdentifier right_column_identifier,
            ObjMeasureTransformFuncs transform_functions, bool symmetrical, bool equality_is_highest,
@@ -191,7 +186,7 @@ public:
                                   algos::hymd::preprocessing::Similarity>{size_limit},
                           symmetrical, equality_is_highest)} {}
 
-    Custom(pybind11::object comparison_function,
+    Custom(nb::object comparison_function,
            algos::hymd::preprocessing::column_matches::ColumnIdentifier left_column_identifier,
            algos::hymd::preprocessing::column_matches::ColumnIdentifier right_column_identifier,
            bool classic_measure, ObjMeasureTransformFuncs transform_functions,

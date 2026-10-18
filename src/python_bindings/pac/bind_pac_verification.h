@@ -1,8 +1,8 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 namespace python_bindings {
-void BindPACVerification(pybind11::module_& main_module);
-void BindDomainPACVerification(pybind11::module_& pac_verification_module);
+void BindPACVerification(nb::module_& main_module);
+void BindDomainPACVerification(nb::module_& pac_verification_module);
 }  // namespace python_bindings

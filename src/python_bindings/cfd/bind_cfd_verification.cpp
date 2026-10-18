@@ -1,8 +1,6 @@
 #include "python_bindings/cfd/bind_cfd_verification.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/cfd/cfd_verifier/cfd_verifier.h"
 #include "core/algorithms/cfd/cfd_verifier/highlight.h"
@@ -10,20 +8,20 @@
 #include "python_bindings/py_util/bind_primitive.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindCFDVerification(py::module_& main_module) {
+void BindCFDVerification(nb::module_& main_module) {
     using namespace algos;
     using namespace algos::cfd;
     using namespace algos::cfd_verifier;
 
     auto cfd_verification_module = main_module.def_submodule("cfd_verification");
 
-    py::class_<Highlight>(cfd_verification_module, "Highlight")
-            .def_property_readonly("cluster", &Highlight::GetCluster)
-            .def_property_readonly("violating_rows", &Highlight::GetViolatingRows);
+    nb::class_<Highlight>(cfd_verification_module, "Highlight")
+            .def_prop_ro("cluster", &Highlight::GetCluster)
+            .def_prop_ro("violating_rows", &Highlight::GetViolatingRows);
 
     BindPrimitiveNoBase<CFDVerifier>(cfd_verification_module, "CFDVerifier")
             .def("cfd_holds", &CFDVerifier::CFDHolds)

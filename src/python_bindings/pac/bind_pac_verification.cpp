@@ -1,6 +1,6 @@
 #include "python_bindings/pac/bind_pac_verification.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <iterator>
 #include <numeric>
@@ -14,25 +14,25 @@
 #include "core/config/names.h"
 #include "python_bindings/py_util/bind_primitive.h"
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
 namespace python_bindings {
-void BindPACVerification(py::module_& main_module) {
+void BindPACVerification(nb::module_& main_module) {
     auto pac_verification_module = main_module.def_submodule("pac_verification");
     auto algos_module = pac_verification_module.def_submodule("algorithms");
 
     BindDomainPACVerification(pac_verification_module);
 }
 
-void BindDomainPACVerification(py::module_& pac_verification_module) {
+void BindDomainPACVerification(nb::module_& pac_verification_module) {
     using namespace algos::pac_verifier;
-    using namespace pybind11::literals;
+    using namespace nb::literals;
     using namespace std::string_literals;
     using namespace config::names;
 
-    py::class_<DomainPACHighlight>(pac_verification_module, "DomainPACHighlight")
-            .def_property_readonly("indices", &DomainPACHighlight::GetRowNums)
-            .def_property_readonly("string_data", &DomainPACHighlight::GetStringData)
+    nb::class_<DomainPACHighlight>(pac_verification_module, "DomainPACHighlight")
+            .def_prop_ro("indices", &DomainPACHighlight::GetRowNums)
+            .def_prop_ro("string_data", &DomainPACHighlight::GetStringData)
             .def("__str__", [](DomainPACHighlight const& hl) -> std::string {
                 auto strings = hl.GetStringData();
                 if (strings.empty()) {

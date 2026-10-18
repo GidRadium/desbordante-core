@@ -1,8 +1,6 @@
 #include "python_bindings/fd/bind_afd.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/fd/afd.h"
 #include "core/algorithms/fd/afd_algorithm.h"
@@ -12,36 +10,32 @@
 #include "python_bindings/py_util/table_serialization.h"
 
 namespace python_bindings {
-void BindAfd(py::module_& main_module) {
+void BindAfd(nb::module_& main_module) {
     using namespace algos;
 
     auto afd_module = main_module.def_submodule("afd");
-    py::class_<AFD, FD>(afd_module, "AFD")
+    nb::class_<AFD, FD>(afd_module, "AFD")
             .def("get_threshold", &AFD::GetThreshold)
-            .def(py::pickle(
-                    // __getstate__
-                    [](AFD const& afd) {
-                        py::tuple schema_state = table_serialization::SerializeRelationalSchema(
-                                afd.GetSchema().get());
-                        py::tuple lhs_state = table_serialization::SerializeVertical(afd.GetLhs());
-                        py::tuple rhs_state = table_serialization::SerializeColumn(afd.GetRhs());
-                        return py::make_tuple(std::move(schema_state), std::move(lhs_state),
-                                              std::move(rhs_state), afd.GetThreshold());
-                    },
-                    // __setstate__
-                    [](py::tuple t) {
-                        if (t.size() != 4)
-                            throw std::runtime_error("Invalid state for AFD pickle!");
-                        std::shared_ptr<RelationalSchema const> schema =
-                                table_serialization::DeserializeRelationalSchema(
-                                        t[0].cast<py::tuple>());
-                        Vertical lhs = table_serialization::DeserializeVertical(
-                                t[1].cast<py::tuple>(), schema.get());
-                        Column rhs = table_serialization::DeserializeColumn(t[2].cast<py::tuple>(),
-                                                                            schema.get());
-                        long double threshold = t[3].cast<long double>();
-                        return AFD(lhs, rhs, threshold, std::move(schema));
-                    }));
+            .def("__getstate__",
+                 [](AFD const& afd) {
+                     nb::tuple schema_state =
+                             table_serialization::SerializeRelationalSchema(afd.GetSchema().get());
+                     nb::tuple lhs_state = table_serialization::SerializeVertical(afd.GetLhs());
+                     nb::tuple rhs_state = table_serialization::SerializeColumn(afd.GetRhs());
+                     return nb::make_tuple(std::move(schema_state), std::move(lhs_state),
+                                           std::move(rhs_state), afd.GetThreshold());
+                 })
+            .def("__setstate__", [](AFD& afd, nb::tuple t) {
+                if (t.size() != 4) throw std::runtime_error("Invalid state for AFD pickle!");
+                std::shared_ptr<RelationalSchema const> schema =
+                        table_serialization::DeserializeRelationalSchema(nb::cast<nb::tuple>(t[0]));
+                Vertical lhs = table_serialization::DeserializeVertical(nb::cast<nb::tuple>(t[1]),
+                                                                        schema.get());
+                Column rhs = table_serialization::DeserializeColumn(nb::cast<nb::tuple>(t[2]),
+                                                                    schema.get());
+                long double threshold = nb::cast<long double>(t[3]);
+                new (&afd) AFD(lhs, rhs, threshold, std::move(schema));
+            });
 
     static constexpr auto kTaneName = "Tane";
     static constexpr auto kPFDTaneName = "PFDTane";
@@ -53,7 +47,7 @@ void BindAfd(py::module_& main_module) {
     // Pyro is registered as an FdAlgorithm in bind_fd.cpp: it discovers approximate FDs via a
     // g1 threshold but returns plain FD objects (no threshold accessor), unlike Tane/PFDTane,
     // which return AFD objects. Re-registering the Pyro class here would abort at import time
-    // (pybind11 does not allow the same C++ type to be bound twice), so it is aliased instead:
+    // (nanobind does not allow the same C++ type to be bound twice), so it is aliased instead:
     // this reuses the single Python class already created in bind_fd.cpp and only exposes it
     // under an additional path, so that it is discoverable alongside the other AFD-discovery
     // algorithms.

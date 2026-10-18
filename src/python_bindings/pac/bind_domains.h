@@ -1,6 +1,6 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <string>
 #include <utility>
@@ -12,16 +12,15 @@
 namespace python_bindings {
 class PyDomain final : public pac::model::IDomain {
 private:
-    pybind11::object dist_from_domain_;
+    nb::object dist_from_domain_;
     std::string name_;
 
 public:
-    PyDomain(pybind11::object dist_from_domain, std::string&& name)
+    PyDomain(nb::object dist_from_domain, std::string&& name)
         : dist_from_domain_(std::move(dist_from_domain)), name_(std::move(name)) {}
 
     double DistFromDomain(pac::model::Tuple const& value) const override {
-        return pybind11::cast<double>(
-                dist_from_domain_(ValuesToPy(tuple_type_->GetTypes(), value)));
+        return nb::cast<double>(dist_from_domain_(ValuesToPy(tuple_type_->GetTypes(), value)));
     }
 
     std::string ToString() const override {
@@ -29,5 +28,5 @@ public:
     }
 };
 
-void BindDomains(pybind11::module_& pac_module);
+void BindDomains(nb::module_& pac_module);
 }  // namespace python_bindings

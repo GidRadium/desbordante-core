@@ -1,18 +1,16 @@
 #include "python_bindings/od/bind_od_verification.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/od/set_based_verifier/verifier.h"
 #include "python_bindings/py_util/bind_primitive.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindAODVerification(pybind11::module_& main_module) {
+void BindAODVerification(nb::module_& main_module) {
     using namespace algos;
 
     auto od_verification_module = main_module.def_submodule("aod_verification");
@@ -20,7 +18,7 @@ void BindAODVerification(pybind11::module_& main_module) {
     auto set_based_aod_verifier =
             BindPrimitiveNoBase<algos::od::SetBasedAodVerifier>(od_verification_module,
                                                                 "SetBasedAodVerifier")
-                    .def("holds", &algos::od::SetBasedAodVerifier::Holds, py::arg("error") = 0.0)
+                    .def("holds", &algos::od::SetBasedAodVerifier::Holds, nb::arg("error") = 0.0)
                     .def("get_error", &algos::od::SetBasedAodVerifier::GetError)
                     .def("get_removal_set", &algos::od::SetBasedAodVerifier::GetRemovalSet);
 

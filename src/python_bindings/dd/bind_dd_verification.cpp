@@ -1,18 +1,12 @@
 #include "python_bindings/dd/bind_dd_verification.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <cstddef>
 #include <functional>
 #include <memory>
 #include <string_view>
 #include <unordered_map>
-
-#include <pybind11/complex.h>
-#include <pybind11/functional.h>
-#include <pybind11/operators.h>
-#include <pybind11/pytypes.h>
-#include <pybind11/stl.h>
 
 #include "core/algorithms/dd/dd.h"
 #include "core/algorithms/dd/dd_verifier/FuncMetric.h"
@@ -23,62 +17,58 @@
 #include "python_bindings/py_util/bind_primitive.h"
 
 namespace python_bindings {
-namespace py = pybind11;
+namespace nb = nanobind;
 
-void BindDDVerification(py::module_& main_module) {
+void BindDDVerification(nb::module_& main_module) {
     using namespace algos;
     auto dd_verification_module = main_module.def_submodule("dd_verification");
-    py::class_<model::DFStringConstraint>(dd_verification_module, "DF")
-            .def(py::init(&util::dd::CreateDf))
+    nb::class_<model::DFStringConstraint>(dd_verification_module, "DF")
+            .def(nb::new_(&util::dd::CreateDf))
             .def("__str__", &model::DFStringConstraint::ToString)
-            .def_property_readonly(
-                    "attribute_name",
-                    [](model::DFStringConstraint const& DF) { return DF.column_name; })
-            .def_property_readonly(
+            .def_prop_ro("attribute_name",
+                         [](model::DFStringConstraint const& DF) { return DF.column_name; })
+            .def_prop_ro(
                     "lower_bound",
                     [](model::DFStringConstraint const& DF) { return DF.constraint.lower_bound; })
-            .def_property_readonly(
+            .def_prop_ro(
                     "upper_bound",
                     [](model::DFStringConstraint const& DF) { return DF.constraint.upper_bound; })
-            .def(pybind11::self == pybind11::self)
-            .def(pybind11::self != pybind11::self)
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
             .def("__hash__",
                  [](model::DFStringConstraint const& dd) {
-                     return py::hash(py::str(dd.ToString()));
+                     return nb::hash(ToPyStr(dd.ToString()));
                  })
             .def("to_json", &model::DFStringConstraint::ToJSON);
-    py::class_<Highlight>(dd_verification_module, "Highlight")
-            .def_property_readonly("attribute_index", &Highlight::GetAttributeIndex)
-            .def_property_readonly("distance", &Highlight::GetDistance)
-            .def_property_readonly("pair_rows", &Highlight::GetPairRows);
-    py::class_<Metric, std::shared_ptr<Metric>>(dd_verification_module, "Metric");
-    py::class_<FuncMetric<int>, Metric, std::shared_ptr<FuncMetric<int>>>(dd_verification_module,
-                                                                          "MetricInt")
-            .def(py::init<std::function<double(int, int)>>());
-    py::class_<FuncMetric<std::string>, Metric, std::shared_ptr<FuncMetric<std::string>>>(
-            dd_verification_module, "MetricStr")
-            .def(py::init<std::function<double(std::string, std::string)>>());
-    py::class_<FuncMetric<double>, Metric, std::shared_ptr<FuncMetric<double>>>(
-            dd_verification_module, "MetricDouble")
-            .def(py::init<std::function<double(double, double)>>());
+    nb::class_<Highlight>(dd_verification_module, "Highlight")
+            .def_prop_ro("attribute_index", &Highlight::GetAttributeIndex)
+            .def_prop_ro("distance", &Highlight::GetDistance)
+            .def_prop_ro("pair_rows", &Highlight::GetPairRows);
+    nb::class_<Metric>(dd_verification_module, "Metric");
+    nb::class_<FuncMetric<int>, Metric>(dd_verification_module, "MetricInt")
+            .def(nb::init<std::function<double(int, int)>>());
+    nb::class_<FuncMetric<std::string>, Metric>(dd_verification_module, "MetricStr")
+            .def(nb::init<std::function<double(std::string, std::string)>>());
+    nb::class_<FuncMetric<double>, Metric>(dd_verification_module, "MetricDouble")
+            .def(nb::init<std::function<double(double, double)>>());
     dd_verification_module.def(
-            "make_metric_ptr", [](py::tuple metric_tuple) -> std::shared_ptr<Metric> {
-                if (py::len(metric_tuple) != 2) {
+            "make_metric_ptr", [](nb::tuple metric_tuple) -> std::shared_ptr<Metric> {
+                if (nb::len(metric_tuple) != 2) {
                     throw std::runtime_error("Input must be a tuple of (function, type_string)");
                 }
 
-                std::string type_tag = metric_tuple[1].cast<std::string>();
+                std::string type_tag = nb::cast<std::string>(metric_tuple[1]);
 
                 if (type_tag == "int") {
                     return std::make_shared<FuncMetric<int>>(
-                            metric_tuple[0].cast<std::function<double(int, int)>>());
+                            nb::cast<std::function<double(int, int)>>(metric_tuple[0]));
                 } else if (type_tag == "double") {
                     return std::make_shared<FuncMetric<double>>(
-                            metric_tuple[0].cast<std::function<double(double, double)>>());
+                            nb::cast<std::function<double(double, double)>>(metric_tuple[0]));
                 } else if (type_tag == "string") {
                     return std::make_shared<FuncMetric<std::string>>(
-                            metric_tuple[0]
-                                    .cast<std::function<double(std::string, std::string)>>());
+                            nb::cast<std::function<double(std::string, std::string)>>(
+                                    metric_tuple[0]));
                 } else {
                     throw std::runtime_error(
                             "Unsupported type tag. Use 'int', 'double', or 'string'.");

@@ -1,40 +1,36 @@
 #include "bind_cind_verification.h"
 
-#include <pybind11/pybind11.h>
-
-#include <pybind11/stl.h>
+#include "python_bindings/binding_core.h"
 
 #include "core/algorithms/cind/cind_verifier/cind_verifier.h"
 #include "python_bindings/py_util/bind_primitive.h"
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
 namespace python_bindings {
 
-void BindCindVerification(py::module_& main_module) {
+void BindCindVerification(nb::module_& main_module) {
     using algos::cind::CINDVerifier;
 
-    py::module_ m = main_module.def_submodule("cind_verification");
+    nb::module_ m = main_module.def_submodule("cind_verification");
 
     using ViolatingCluster = CINDVerifier::ViolatingCluster;
 
-    py::class_<ViolatingCluster>(m, "ViolatingCluster")
-            .def_readonly("basket_rows", &ViolatingCluster::basket_rows)
-            .def_readonly("violating_rows", &ViolatingCluster::violating_rows)
-            .def(py::pickle(
-                    // __getstate__
-                    [](ViolatingCluster const& vc) {
-                        return py::make_tuple(vc.basket_rows, vc.violating_rows);
-                    },
-                    // __setstate__
-                    [](py::tuple st) {
-                        if (st.size() != 2) {
-                            throw std::runtime_error("Invalid state for ViolatingCluster pickle!");
-                        }
-                        return ViolatingCluster{
-                                .basket_rows = st[0].cast<CINDVerifier::Cluster>(),
-                                .violating_rows = st[1].cast<CINDVerifier::Cluster>()};
-                    }));
+    nb::class_<ViolatingCluster>(m, "ViolatingCluster")
+            .def_ro("basket_rows", &ViolatingCluster::basket_rows)
+            .def_ro("violating_rows", &ViolatingCluster::violating_rows)
+            .def("__getstate__",
+                 [](ViolatingCluster const& vc) {
+                     return nb::make_tuple(vc.basket_rows, vc.violating_rows);
+                 })
+            .def("__setstate__", [](ViolatingCluster& vc, nb::tuple st) {
+                if (st.size() != 2) {
+                    throw std::runtime_error("Invalid state for ViolatingCluster pickle!");
+                }
+                new (&vc)
+                        ViolatingCluster{.basket_rows = nb::cast<CINDVerifier::Cluster>(st[0]),
+                                         .violating_rows = nb::cast<CINDVerifier::Cluster>(st[1])};
+            });
 
     BindPrimitiveNoBase<CINDVerifier>(m, "CINDVerifier")
             .def("holds", &CINDVerifier::Holds)

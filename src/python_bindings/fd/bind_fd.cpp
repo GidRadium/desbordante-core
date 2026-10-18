@@ -1,13 +1,11 @@
 #include "python_bindings/fd/bind_fd.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <memory>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-
-#include <pybind11/stl.h>
 
 #include "core/algorithms/fd/aidfd/aid.h"
 #include "core/algorithms/fd/depminer/depminer.h"
@@ -28,58 +26,55 @@
 #include "python_bindings/py_util/vector_to_tuple.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 
-py::tuple MakeFdNameTuple(FD const& fd) {
+nb::tuple MakeFdNameTuple(FD const& fd) {
     auto [lhs, rhs] = fd.ToNameTuple();
-    return py::make_tuple(python_bindings::VectorToTuple(lhs), std::move(rhs));
+    return nb::make_tuple(python_bindings::VectorToTuple(lhs), std::move(rhs));
 }
 }  // namespace
 
 namespace python_bindings {
-void BindFd(py::module_& main_module) {
+void BindFd(nb::module_& main_module) {
     using namespace algos;
 
     auto fd_module = main_module.def_submodule("fd");
-    py::class_<FD>(fd_module, "FD")
+    nb::class_<FD>(fd_module, "FD")
             .def("__str__", &FD::ToLongString)
             .def("to_long_string", &FD::ToLongString)
             .def("to_short_string", &FD::ToShortString)
             .def("to_index_tuple",
                  [](FD const& fd) {
-                     return py::make_tuple(VectorToTuple(fd.GetLhsIndices()), fd.GetRhsIndex());
+                     return nb::make_tuple(VectorToTuple(fd.GetLhsIndices()), fd.GetRhsIndex());
                  })
             .def("to_name_tuple", MakeFdNameTuple)
             // TODO: implement proper equality check for FD
             .def("__eq__", [](FD const& fd1,
                               FD const& fd2) { return fd1.ToNameTuple() == fd2.ToNameTuple(); })
-            .def("__hash__", [](FD const& fd) { return py::hash(MakeFdNameTuple(fd)); })
-            .def_property_readonly("lhs_indices", &FD::GetLhsIndices)
-            .def_property_readonly("rhs_index", &FD::GetRhsIndex)
-            .def(py::pickle(
-                    // __getstate__
-                    [](FD const& fd) {
-                        py::tuple schema_state = table_serialization::SerializeRelationalSchema(
-                                fd.GetSchema().get());
-                        py::tuple lhs_state = table_serialization::SerializeVertical(fd.GetLhs());
-                        py::tuple rhs_state = table_serialization::SerializeColumn(fd.GetRhs());
-                        return py::make_tuple(std::move(schema_state), std::move(lhs_state),
-                                              std::move(rhs_state));
-                    },
-                    // __setstate__
-                    [](py::tuple t) {
-                        if (t.size() != 3) {
-                            throw std::runtime_error("Invalid state for FD pickle!");
-                        }
-                        std::shared_ptr<RelationalSchema const> schema =
-                                table_serialization::DeserializeRelationalSchema(
-                                        t[0].cast<py::tuple>());
-                        Vertical lhs = table_serialization::DeserializeVertical(
-                                t[1].cast<py::tuple>(), schema.get());
-                        Column rhs = table_serialization::DeserializeColumn(t[2].cast<py::tuple>(),
-                                                                            schema.get());
-                        return FD(lhs, rhs, std::move(schema));
-                    }));
+            .def("__hash__", [](FD const& fd) { return nb::hash(MakeFdNameTuple(fd)); })
+            .def_prop_ro("lhs_indices", &FD::GetLhsIndices)
+            .def_prop_ro("rhs_index", &FD::GetRhsIndex)
+            .def("__getstate__",
+                 [](FD const& fd) {
+                     nb::tuple schema_state =
+                             table_serialization::SerializeRelationalSchema(fd.GetSchema().get());
+                     nb::tuple lhs_state = table_serialization::SerializeVertical(fd.GetLhs());
+                     nb::tuple rhs_state = table_serialization::SerializeColumn(fd.GetRhs());
+                     return nb::make_tuple(std::move(schema_state), std::move(lhs_state),
+                                           std::move(rhs_state));
+                 })
+            .def("__setstate__", [](FD& fd, nb::tuple t) {
+                if (t.size() != 3) {
+                    throw std::runtime_error("Invalid state for FD pickle!");
+                }
+                std::shared_ptr<RelationalSchema const> schema =
+                        table_serialization::DeserializeRelationalSchema(nb::cast<nb::tuple>(t[0]));
+                Vertical lhs = table_serialization::DeserializeVertical(nb::cast<nb::tuple>(t[1]),
+                                                                        schema.get());
+                Column rhs = table_serialization::DeserializeColumn(nb::cast<nb::tuple>(t[2]),
+                                                                    schema.get());
+                new (&fd) FD(lhs, rhs, std::move(schema));
+            });
 
     static constexpr auto kPyroName = "Pyro";
     auto fd_algos_module =

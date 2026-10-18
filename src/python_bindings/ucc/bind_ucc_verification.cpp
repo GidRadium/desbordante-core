@@ -1,11 +1,9 @@
 #include "python_bindings/ucc/bind_ucc_verification.h"
 
-#include <pybind11/pybind11.h>
+#include "python_bindings/binding_core.h"
 
 #include <cstddef>
 #include <vector>
-
-#include <pybind11/stl.h>
 
 #include "core/algorithms/ucc/ucc.h"
 #include "core/algorithms/ucc/ucc_verifier/ucc_verifier.h"
@@ -15,11 +13,11 @@
 #include "python_bindings/py_util/vector_to_tuple.h"
 
 namespace {
-namespace py = pybind11;
+namespace nb = nanobind;
 }  // namespace
 
 namespace python_bindings {
-void BindUccVerification(py::module_& main_module) {
+void BindUccVerification(nb::module_& main_module) {
     using namespace algos;
 
     auto ucc_verification_module = main_module.def_submodule("ucc_verification");
@@ -27,9 +25,9 @@ void BindUccVerification(py::module_& main_module) {
     BindPrimitiveNoBase<UCCVerifier>(ucc_verification_module, "UccVerifier")
             .def("validate_ucc",
                  [](UCCVerifier& verifier, model::UCC& ucc) {
-                     py::dict kwargs;
+                     nb::dict kwargs;
                      std::vector<Column const*> columns = ucc.GetColumns();
-                     py::tuple indices_tuple = VectorToTuple(
+                     nb::tuple indices_tuple = VectorToTuple(
                              columns, [](auto const& elem) { return elem->GetIndex(); });
                      kwargs["ucc_indices"] = indices_tuple;
                      configure_algorithm::ConfigureAlgo(verifier, kwargs);
