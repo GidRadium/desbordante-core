@@ -10,7 +10,7 @@
 
 namespace algos {
 
-class PyroUCC : public DependencyConsumer, public UCCAlgorithm {
+class PyroUCC : public UCCAlgorithm, public DependencyConsumer {
 private:
     std::unique_ptr<ColumnLayoutRelationData> relation_;
 
