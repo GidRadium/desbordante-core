@@ -15,6 +15,28 @@ reference streams in ``test_input_data/pickle_golden/<class>.pkl``.  A normal
 run only reads them with the current build, checks their structure and
 performs a pickle round-trip; it never rewrites them.
 
+Every class with a native ``__getstate__``/``__setstate__`` pair is covered
+(23 classes in 17 binding translation units):
+
+* ``fd/bind_fd.cpp`` - ``FD``; ``fd/bind_afd.cpp`` - ``AFD``;
+* ``ucc/bind_ucc.cpp`` - ``UCC``; ``cfd/bind_cfd.cpp`` - ``Item``, ``CFD``;
+* ``cind/bind_cind.cpp`` - ``Condition``;
+  ``cind/bind_cind_verification.cpp`` - ``ViolatingCluster``;
+* ``md/bind_md.cpp`` - ``MD``; ``nar/bind_nar.cpp`` - ``NAR``;
+* ``dd/bind_split.cpp`` - ``DD``; ``ind/bind_ind.cpp`` - ``IND``;
+* ``data/bind_data_types.cpp`` - ``ColumnCombination``;
+* ``od/bind_od.cpp`` - ``AscCanonicalOD``, ``DescCanonicalOD``,
+  ``SimpleCanonicalOD``, ``ListOD``;
+* ``ar/bind_ar.cpp`` - ``ARStrings``, ``ArIDs``;
+* ``dc/bind_fastadc.cpp`` - ``DC``; ``ac/bind_ac.cpp`` - ``ACRanges``,
+  ``ACException``;
+* ``pac/bind_pac.cpp`` - ``DomainPAC``; ``sfd/bind_sfd.cpp`` - ``Correlation``.
+
+Every ``__setstate__`` first validates the tuple arity and all nested fields it
+indexes, and only then placement-news the object into the storage supplied by
+Python's pickle machinery.  Nothing is assigned to a live instance and no
+destructor is called; malformed states raise before the placement new.
+
 The goldens are produced from the following minimal datasets (paths are
 resolved relative to the repository's ``test_input_data`` directory):
 
@@ -38,15 +60,15 @@ Options used for the goldens are listed next to each fixture factory.  Data
 set contents never enter the pickle streams as paths: the CSV parser stores
 only the file's basename as the relation name.
 
-The NAR golden keeps the baseline pybind11 stream untouched.  That stream
-encodes the value-range ``TypeId`` (a ``char``) as a one-character string
-while ``__setstate__`` expects an integer; the test applies a narrow,
-documented compatibility shim when loading it so the same bytes can be
-compared and re-serialized.
+The state shape is frozen against the baseline by decoding the raw golden
+streams with a private unpickler that substitutes a stub class and therefore
+does not call into the current bindings at all.  NAR stores the value-range
+``TypeId`` (a ``char`` enum) as a one-character string, exactly as pybind11
+did; ``__setstate__`` accepts both that layout and an integer type code, so
+the baseline stream loads natively and both enum conversions stay readable.
 """
 
 import copy
-import contextlib
 import gc
 import inspect
 import json
@@ -69,6 +91,7 @@ _REPO_ROOT = _HERE.parent.parent
 _INVENTORY_PATH = _HERE / "test_api_contract_inventory.json"
 _GOLDEN_DIR = _HERE / "test_input_data" / "pickle_golden"
 _RECORD_GOLDEN = os.environ.get("DESBORDANTE_RECORD_GOLDEN") == "1"
+_GOLDEN_PICKLE_PROTOCOL = 4
 
 _REQUIRED_GOLDENS = (
     "FD",
@@ -140,7 +163,10 @@ _GOLDEN_TYPES = {
 
 # Classes whose full object protocol (equality, hashing, copying and pickling)
 # is frozen.  CIND itself is intentionally absent: bind_cind.cpp does not
-# define py::pickle for it, only Condition is picklable.
+# define py::pickle for it, only Condition is picklable.  Picklable classes
+# without a baseline __eq__/__hash__ (ListOD, ColumnCombination, the AR and AC
+# patterns, ViolatingCluster) are still covered by TestPickleCopy and the
+# golden state checks.
 _FULL_PROTOCOL_GOLDENS = (
     "FD",
     "AFD",
@@ -248,7 +274,7 @@ def _golden_path(name):
 def _write_golden(name, value):
     _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
     with _golden_path(name).open("wb") as file:
-        pickle.dump(value, file)
+        pickle.dump(value, file, protocol=_GOLDEN_PICKLE_PROTOCOL)
 
 
 def _pickle_state(value):
@@ -258,63 +284,61 @@ def _pickle_state(value):
     return getstate()
 
 
-def _normalize_nar_state(state):
-    """Work around a baseline NAR pickle bug.
+class _GoldenStateStub:
+    """Stand-in for the pickled class used to decode a baseline state.
 
-    ``SerializeValueRange`` stores ``TypeId`` (a ``char`` enum) via
-    ``py::make_tuple``; pybind11 converts ``char`` to a one-character string,
-    while ``DeserializeValueRange`` casts it back to ``int``.  The raw golden
-    bytes keep that baseline layout; this shim only makes them loadable.
+    Substitute every global referenced by the stream with this stub.  Besides
+    the top-level pattern class, CFD and IND reference small value classes;
+    all of them are replaced here.  The states consist of built-in containers
+    and scalars, so no binding code runs and the baseline tuple/list/dict
+    layout can be inspected directly.
     """
-    if not isinstance(state, tuple) or len(state) != 6:
-        return state
-
-    def fix_range(pair):
-        type_code, payload = pair
-        if isinstance(type_code, str) and len(type_code) == 1:
-            type_code = ord(type_code)
-        return type_code, payload
-
-    return (
-        state[0],
-        state[1],
-        state[2],
-        state[3],
-        {key: fix_range(value) for key, value in state[4].items()},
-        {key: fix_range(value) for key, value in state[5].items()},
-    )
-
-
-@contextlib.contextmanager
-def _nar_setstate_compat():
-    nar_class = desb.nar.NAR
-    original_setstate = nar_class.__setstate__
 
     def __setstate__(self, state):
-        return original_setstate(self, _normalize_nar_state(state))
-
-    nar_class.__setstate__ = __setstate__
-    try:
-        yield
-    finally:
-        nar_class.__setstate__ = original_setstate
+        self.state = state
 
 
-def _load_pickle(name, payload):
-    if name == "NAR":
-        with _nar_setstate_compat():
-            return pickle.loads(payload)
+class _GoldenStateUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        return _GoldenStateStub
+
+
+def _load_golden_state(name):
+    with _golden_path(name).open("rb") as file:
+        return _GoldenStateUnpickler(file).load().state
+
+
+def _state_signature(value):
+    """Return a recursively typed, order-insensitive view of a pickle state."""
+    if isinstance(value, tuple):
+        return ("tuple", tuple(_state_signature(item) for item in value))
+    if isinstance(value, list):
+        return ("list", tuple(_state_signature(item) for item in value))
+    if isinstance(value, dict):
+        items = [
+            (type(key).__name__, repr(key), _state_signature(key), _state_signature(item))
+            for key, item in value.items()
+        ]
+        items.sort()
+        return ("dict", tuple(items))
+    if isinstance(value, _GoldenStateStub):
+        return ("object", _state_signature(value.state))
+    if not isinstance(value, (str, bytes, int, float, bool, type(None))):
+        getstate = getattr(value, "__getstate__", None)
+        if getstate is not None:
+            return ("object", _state_signature(getstate()))
+    return (type(value).__name__, value)
+
+
+def _load_pickle(payload):
     return pickle.loads(payload)
 
 
-def _pickle_roundtrip(name, value):
-    return _load_pickle(name, pickle.dumps(value))
+def _pickle_roundtrip(value):
+    return _load_pickle(pickle.dumps(value))
 
 
-def _copy_pattern(name, copier, value):
-    if name == "NAR":
-        with _nar_setstate_compat():
-            return copier(value)
+def _copy_pattern(copier, value):
     return copier(value)
 
 
@@ -769,7 +793,7 @@ class TestPatternProtocols(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.objects = {
-            name: _load_pickle(name, _golden_path(name).read_bytes())
+            name: _load_pickle(_golden_path(name).read_bytes())
             for name in _FULL_PROTOCOL_GOLDENS
         }
 
@@ -784,7 +808,7 @@ class TestPatternProtocols(unittest.TestCase):
     def test_equality_hash_and_set(self):
         for name, value in self.objects.items():
             with self.subTest(pattern=name):
-                clone = _pickle_roundtrip(name, value)
+                clone = _pickle_roundtrip(value)
                 self.assertEqual(value, clone)
                 self.assertEqual(hash(value), hash(clone))
                 self.assertEqual(len({value, clone}), 1)
@@ -794,7 +818,7 @@ class TestPatternProtocols(unittest.TestCase):
         for name, value in self.objects.items():
             for copier in (copy.copy, copy.deepcopy):
                 with self.subTest(pattern=name, copier=copier.__name__):
-                    clone = _copy_pattern(name, copier, value)
+                    clone = _copy_pattern(copier, value)
                     self.assertIsNot(clone, value)
                     self.assertEqual(value, clone)
                     self.assertEqual(hash(value), hash(clone))
@@ -802,11 +826,11 @@ class TestPatternProtocols(unittest.TestCase):
     def test_pickle_roundtrip(self):
         for name, value in self.objects.items():
             with self.subTest(pattern=name):
-                clone = _pickle_roundtrip(name, value)
+                clone = _pickle_roundtrip(value)
                 self.assertIs(type(clone), type(value))
                 self.assertEqual(
-                    pickle.dumps(_pickle_state(value)),
-                    pickle.dumps(_pickle_state(clone)),
+                    _state_signature(_pickle_state(value)),
+                    _state_signature(_pickle_state(clone)),
                 )
                 self.assertEqual(str(value), str(clone))
                 self.assertEqual(value, clone)
@@ -840,6 +864,30 @@ class TestPickleGoldens(unittest.TestCase):
         missing = [name for name in _REQUIRED_GOLDENS if not _golden_path(name).is_file()]
         self.assertEqual(missing, [])
 
+    def test_baseline_state_shape_matches(self):
+        for name in sorted(_GOLDEN_TYPES):
+            with self.subTest(pattern=name):
+                baseline_state = _load_golden_state(name)
+                value = _load_pickle(_golden_path(name).read_bytes())
+                current_state = _pickle_state(value)
+                self.assertEqual(
+                    _state_signature(current_state),
+                    _state_signature(baseline_state),
+                )
+
+    def test_goldens_reencode_to_baseline_bytes(self):
+        for name in sorted(_GOLDEN_TYPES):
+            # NAR's state contains dictionaries built from std::unordered_map;
+            # their iteration order is not part of the pickle format and may
+            # differ between standard libraries.  Its contents and recursive
+            # types are covered by test_baseline_state_shape_matches.
+            if name == "NAR":
+                continue
+            with self.subTest(pattern=name):
+                raw = _golden_path(name).read_bytes()
+                value = _load_pickle(raw)
+                self.assertEqual(pickle.dumps(value, protocol=_GOLDEN_PICKLE_PROTOCOL), raw)
+
     def test_goldens_load_and_roundtrip(self):
         names = sorted(_GOLDEN_TYPES)
         for name in names:
@@ -847,7 +895,7 @@ class TestPickleGoldens(unittest.TestCase):
                 path = _golden_path(name)
                 self.assertTrue(path.is_file(), msg=f"missing golden {path}")
                 raw = path.read_bytes()
-                value = _load_pickle(name, raw)
+                value = _load_pickle(raw)
                 expected_type = _resolve(_GOLDEN_TYPES[name])
                 self.assertIsInstance(value, expected_type)
 
@@ -855,11 +903,11 @@ class TestPickleGoldens(unittest.TestCase):
                 self.assertIsInstance(state, tuple)
                 self.assertEqual(len(state), _GOLDEN_STATE_ARITY[name])
 
-                clone = _pickle_roundtrip(name, value)
+                clone = _pickle_roundtrip(value)
                 self.assertIs(type(clone), type(value))
                 self.assertEqual(
-                    pickle.dumps(_pickle_state(clone)),
-                    pickle.dumps(state),
+                    _state_signature(_pickle_state(clone)),
+                    _state_signature(state),
                 )
                 if name in _CUSTOM_STR_GOLDENS:
                     self.assertEqual(str(clone), str(value))
@@ -867,6 +915,159 @@ class TestPickleGoldens(unittest.TestCase):
                 if name in _FULL_PROTOCOL_GOLDENS:
                     self.assertEqual(clone, value)
                     self.assertEqual(hash(clone), hash(value))
+
+
+class TestPickleCopy(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.objects = {
+            name: _load_pickle(_golden_path(name).read_bytes())
+            for name in sorted(_GOLDEN_TYPES)
+        }
+
+    def test_copy_and_deepcopy(self):
+        for name, value in self.objects.items():
+            for copier in (copy.copy, copy.deepcopy):
+                with self.subTest(pattern=name, copier=copier.__name__):
+                    clone = _copy_pattern(copier, value)
+                    self.assertIsNot(clone, value)
+                    self.assertIs(type(clone), type(value))
+                    self.assertEqual(
+                        _state_signature(_pickle_state(clone)),
+                        _state_signature(_pickle_state(value)),
+                    )
+                    if name in _FULL_PROTOCOL_GOLDENS:
+                        self.assertEqual(value, clone)
+                        self.assertEqual(hash(value), hash(clone))
+
+    def test_reduce_ex_uses_getstate(self):
+        for name, value in self.objects.items():
+            with self.subTest(pattern=name):
+                reduce_value = value.__reduce_ex__(pickle.DEFAULT_PROTOCOL)
+                self.assertIsInstance(reduce_value, tuple)
+                self.assertEqual(
+                    _state_signature(reduce_value[2]),
+                    _state_signature(_pickle_state(value)),
+                )
+
+
+class TestPickleStateValidation(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.objects = {
+            name: _load_pickle(_golden_path(name).read_bytes())
+            for name in sorted(_GOLDEN_TYPES)
+        }
+
+    def _assert_rejected_without_mutation(self, value, state):
+        cls = type(value)
+        # This is the same storage state pickle uses: allocated, but no C++
+        # object has been constructed in it yet.
+        instance = cls.__new__(cls)
+        with self.assertRaises(RuntimeError):
+            cls.__setstate__(instance, state)
+        # A rejected state must not have constructed anything.  The same
+        # still-uninitialized storage must accept the valid state afterwards.
+        cls.__setstate__(instance, _pickle_state(value))
+        self.assertEqual(
+            _state_signature(_pickle_state(instance)),
+            _state_signature(_pickle_state(value)),
+        )
+
+    def test_wrong_arity(self):
+        for name, value in self.objects.items():
+            state = _pickle_state(value)
+            self.assertIsInstance(state, tuple)
+            for bad_state in (state[:-1], state + (None,)):
+                with self.subTest(pattern=name, arity=len(bad_state)):
+                    self._assert_rejected_without_mutation(value, bad_state)
+
+    def test_wrong_field_types(self):
+        for name, value in self.objects.items():
+            state = _pickle_state(value)
+            bad_state = tuple(object() for _ in state)
+            with self.subTest(pattern=name):
+                self._assert_rejected_without_mutation(value, bad_state)
+
+    def test_nested_fields_are_validated(self):
+        cases = {}
+
+        dd_state = _pickle_state(self.objects["DD"])
+        dd_left = list(dd_state[0])
+        dd_left[0] = dd_left[0][:-1]
+        cases["DD"] = (self.objects["DD"], (dd_left, dd_state[1]))
+
+        dc_state = _pickle_state(self.objects["DC"])
+        dc_provider = list(dc_state[1])
+        dc_provider[0] = dc_provider[0][:-1]
+        cases["DC"] = (self.objects["DC"], (dc_state[0], dc_provider, dc_state[2]))
+
+        ind_state = _pickle_state(self.objects["IND"])
+        ind_schemas = list(ind_state[2])
+        ind_schemas[0] = ind_schemas[0][:-1]
+        cases["IND"] = (
+            self.objects["IND"],
+            (ind_state[0], ind_state[1], ind_schemas, ind_state[3]),
+        )
+
+        nar_state = _pickle_state(self.objects["NAR"])
+        nar_ante = dict(nar_state[4])
+        feature = next(iter(nar_ante))
+        _, payload = nar_ante[feature]
+        nar_ante[feature] = ("xx", payload)
+        cases["NAR"] = (
+            self.objects["NAR"],
+            (
+                nar_state[0],
+                nar_state[1],
+                nar_state[2],
+                nar_state[3],
+                nar_ante,
+                nar_state[5],
+            ),
+        )
+
+        ac_state = _pickle_state(self.objects["ACRanges"])
+        cases["ACRanges-type"] = (
+            self.objects["ACRanges"],
+            (ac_state[0], 999, ac_state[2]),
+        )
+        cases["ACRanges-ranges"] = (
+            self.objects["ACRanges"],
+            (ac_state[0], ac_state[1], ac_state[2][:-1]),
+        )
+
+        for name, (value, bad_state) in cases.items():
+            with self.subTest(pattern=name):
+                self._assert_rejected_without_mutation(value, bad_state)
+
+    def test_nar_accepts_integer_type_ids(self):
+        value = self.objects["NAR"]
+        state = _pickle_state(value)
+
+        def integer_type_ids(range_map):
+            converted = {}
+            for feature, (type_id, payload) in range_map.items():
+                if isinstance(type_id, str):
+                    self.assertEqual(len(type_id), 1)
+                    type_id = ord(type_id)
+                converted[feature] = (type_id, payload)
+            return converted
+
+        integer_state = (
+            state[0],
+            state[1],
+            state[2],
+            state[3],
+            integer_type_ids(state[4]),
+            integer_type_ids(state[5]),
+        )
+        clone = desb.nar.NAR.__new__(desb.nar.NAR)
+        desb.nar.NAR.__setstate__(clone, integer_state)
+        self.assertEqual(
+            _state_signature(_pickle_state(clone)),
+            _state_signature(state),
+        )
 
 
 class TestInputKinds(unittest.TestCase):

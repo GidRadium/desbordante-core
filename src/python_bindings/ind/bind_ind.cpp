@@ -87,11 +87,27 @@ IND DeserializeInd(nb::tuple t) {
     auto schemas_state = nb::cast<std::vector<nb::tuple>>(t[2]);
     std::vector<std::unique_ptr<RelationalSchema>> schemas;
     for (nb::tuple const& s_state : schemas_state) {
+        if (s_state.size() != 2) {
+            throw std::runtime_error("Invalid state for IND pickle!");
+        }
         std::string s_name = nb::cast<std::string>(s_state[0]);
         std::vector<std::string> s_col_names = nb::cast<std::vector<std::string>>(s_state[1]);
         auto schema = std::make_unique<RelationalSchema>(std::move(s_name), std::move(s_col_names));
         schemas.push_back(std::move(schema));
     }
+    if (lhs_cc.GetTableIndex() >= schemas.size() || rhs_cc.GetTableIndex() >= schemas.size()) {
+        throw std::runtime_error("Invalid table index in IND pickle!");
+    }
+    auto validate_columns = [&schemas](ColumnCombination const& cc) {
+        RelationalSchema const& schema = *schemas.at(cc.GetTableIndex());
+        for (ColumnIndex index : cc.GetColumnIndices()) {
+            if (index >= schema.GetNumColumns()) {
+                throw std::runtime_error("Invalid column index in IND pickle!");
+            }
+        }
+    };
+    validate_columns(lhs_cc);
+    validate_columns(rhs_cc);
     auto schemas_ptr =
             std::make_shared<std::vector<std::unique_ptr<RelationalSchema>>>(std::move(schemas));
     double error = nb::cast<double>(t[3]);

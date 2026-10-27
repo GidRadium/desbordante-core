@@ -43,22 +43,22 @@ void BindSplit(nb::module_& main_module) {
                      }
                      auto left_vec = nb::cast<std::vector<nb::tuple>>(t[0]);
                      auto right_vec = nb::cast<std::vector<nb::tuple>>(t[1]);
-                     std::list<model::DFStringConstraint> left_list;
-                     for (auto const& item : left_vec) {
-                         std::string col_name = nb::cast<std::string>(item[0]);
-                         double lower_bound = nb::cast<double>(item[1]);
-                         double upper_bound = nb::cast<double>(item[2]);
-                         left_list.push_back(model::DFStringConstraint(std::move(col_name),
-                                                                       lower_bound, upper_bound));
-                     }
-                     std::list<model::DFStringConstraint> right_list;
-                     for (auto const& item : right_vec) {
-                         std::string col_name = nb::cast<std::string>(item[0]);
-                         double lower_bound = nb::cast<double>(item[1]);
-                         double upper_bound = nb::cast<double>(item[2]);
-                         right_list.push_back(model::DFStringConstraint(std::move(col_name),
-                                                                        lower_bound, upper_bound));
-                     }
+                     auto make_constraints = [](std::vector<nb::tuple> const& state) {
+                         std::list<model::DFStringConstraint> constraints;
+                         for (auto const& item : state) {
+                             if (item.size() != 3) {
+                                 throw std::runtime_error("Invalid DDString constraint pickle!");
+                             }
+                             std::string col_name = nb::cast<std::string>(item[0]);
+                             double lower_bound = nb::cast<double>(item[1]);
+                             double upper_bound = nb::cast<double>(item[2]);
+                             constraints.push_back(model::DFStringConstraint(
+                                     std::move(col_name), lower_bound, upper_bound));
+                         }
+                         return constraints;
+                     };
+                     std::list<model::DFStringConstraint> left_list = make_constraints(left_vec);
+                     std::list<model::DFStringConstraint> right_list = make_constraints(right_vec);
                      new (&dd_str) model::DDString{std::move(left_list), std::move(right_list)};
                  })
             .def(nb::self == nb::self)

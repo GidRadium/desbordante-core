@@ -2,6 +2,8 @@
 
 #include "python_bindings/binding_core.h"
 
+#include <magic_enum/magic_enum.hpp>
+
 #include "core/algorithms/dc/FastADC/fastadc.h"
 #include "core/util/enum_to_str.h"
 #include "python_bindings/py_util/bind_primitive.h"
@@ -35,10 +37,16 @@ nb::tuple SerializePredicate(PredicatePtr predicate) {
 }
 
 PredicatePtr DeserializePredicate(nb::tuple t, std::shared_ptr<RelationalSchema const> schema) {
-    OperatorType op_type = static_cast<OperatorType>(nb::cast<int>(t[0]));
+    if (t.size() != 3) {
+        throw std::runtime_error("Invalid state for DC predicate pickle!");
+    }
+    auto op_type = magic_enum::enum_cast<OperatorType>(nb::cast<int>(t[0]));
+    if (!op_type) {
+        throw std::runtime_error("Invalid operator type in DC pickle!");
+    }
     ColumnOperand lhs = DeserializeColumnOperand(nb::cast<nb::tuple>(t[1]), schema);
     ColumnOperand rhs = DeserializeColumnOperand(nb::cast<nb::tuple>(t[2]), std::move(schema));
-    return new Predicate(Operator(op_type), lhs, rhs);
+    return new Predicate(Operator(*op_type), lhs, rhs);
 }
 
 nb::tuple SerializeDc(DC const& dc) {
@@ -73,6 +81,9 @@ DC DeserializeDc(nb::tuple t) {
     boost::dynamic_bitset<> bitset(provider->Size());
     for (auto py_idx : nb::cast<nb::list>(t[2])) {
         size_t idx = nb::cast<size_t>(py_idx);
+        if (idx >= bitset.size()) {
+            throw std::runtime_error("Invalid predicate index in DC pickle!");
+        }
         bitset.set(idx);
     }
 

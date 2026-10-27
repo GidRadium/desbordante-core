@@ -80,10 +80,20 @@ void BindAc(nb::module_& main_module) {
                 auto col_indices = nb::cast<std::pair<size_t, size_t>>(t[0]);
                 int type_id_int = nb::cast<int>(t[1]);
                 auto s_ranges = nb::cast<std::vector<std::string>>(t[2]);
-                auto type_id = magic_enum::enum_cast<model::TypeId>(type_id_int)
-                                       .value_or(model::TypeId::kUndefined);
+                auto type_id_opt = magic_enum::enum_cast<model::TypeId>(type_id_int);
+                if (!type_id_opt ||
+                    (*type_id_opt != model::TypeId::kInt &&
+                     *type_id_opt != model::TypeId::kDouble)) {
+                    throw std::runtime_error("Invalid type id in ACRanges pickle!");
+                }
+                if (s_ranges.size() % 2 != 0) {
+                    throw std::runtime_error("Invalid ranges in ACRanges pickle!");
+                }
                 std::unique_ptr<model::INumericType> num_type =
-                        CreateNumericTypeFromTypeId(type_id);
+                        CreateNumericTypeFromTypeId(*type_id_opt);
+                if (!num_type) {
+                    throw std::runtime_error("Invalid type id in ACRanges pickle!");
+                }
                 std::vector<std::byte const*> ranges;
                 ranges.reserve(s_ranges.size());
                 for (auto const& s : s_ranges) {

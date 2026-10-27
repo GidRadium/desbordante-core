@@ -51,12 +51,31 @@ nb::object SerializeValueRange(std::shared_ptr<model::ValueRange> const& vr) {
     throw std::runtime_error("Unsupported ValueRange type in serialization.");
 }
 
+int DeserializeTypeId(nb::handle obj) {
+    // `TypeId` has a `char` underlying type.  pybind11 (and nanobind, which
+    // follows it) convert a `char` to a one-character string, so the baseline
+    // streams store the type as e.g. "\x00".  Accept an integer as well to
+    // keep streams produced by a build with an integer enum conversion
+    // readable.
+    if (nb::isinstance<nb::str>(obj)) {
+        std::string type_str = nb::cast<std::string>(obj);
+        if (type_str.size() != 1) {
+            throw std::runtime_error("Invalid ValueRange TypeId in NAR pickle!");
+        }
+        return static_cast<unsigned char>(type_str[0]);
+    }
+    if (nb::isinstance<nb::int_>(obj)) {
+        return nb::cast<int>(obj);
+    }
+    throw std::runtime_error("Invalid ValueRange TypeId in NAR pickle!");
+}
+
 std::shared_ptr<model::ValueRange> DeserializeValueRange(nb::object const& obj) {
     auto tup = nb::cast<nb::tuple>(obj);
     if (tup.size() != 2) {
         throw std::runtime_error("Invalid ValueRange tuple size!");
     }
-    int type_code = nb::cast<int>(tup[0]);
+    int type_code = DeserializeTypeId(tup[0]);
     model::TypeId type_id =
             magic_enum::enum_cast<model::TypeId>(type_code).value_or(model::TypeId::kUndefined);
     switch (type_id) {
