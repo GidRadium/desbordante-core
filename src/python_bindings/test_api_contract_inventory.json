@@ -299,6 +299,9 @@
         "ac_seed": [
           "builtins.float"
         ],
+        "bin_operation": [
+          "builtins.str"
+        ],
         "bumps_limit": [
           "builtins.int"
         ],
@@ -318,15 +321,14 @@
           "builtins.float"
         ]
       },
-      "unsupported_option_types": [
-        "bin_operation"
-      ],
+      "unsupported_option_types": [],
       "table_options": [
         "table"
       ],
       "default_options": [],
       "non_default_options": [
         "ac_seed",
+        "bin_operation",
         "bumps_limit",
         "fuzziness",
         "iterations_limit",
@@ -337,7 +339,10 @@
         "table"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "bin_operation"
+      ]
     },
     "desbordante.afd.algorithms.Tane": {
       "needed_options": [
@@ -479,6 +484,9 @@
           "builtins.list",
           "builtins.int"
         ],
+        "metric": [
+          "builtins.str"
+        ],
         "rhs_indices": [
           "builtins.list",
           "builtins.int"
@@ -487,22 +495,24 @@
           "desbordante.data_types.Table"
         ]
       },
-      "unsupported_option_types": [
-        "metric"
-      ],
+      "unsupported_option_types": [],
       "table_options": [
         "table"
       ],
       "default_options": [],
       "non_default_options": [
         "lhs_indices",
+        "metric",
         "rhs_indices"
       ],
       "needed_after_defaults": [
         "table"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "metric"
+      ]
     },
     "desbordante.ind.algorithms.Spider": {
       "needed_options": [
@@ -885,6 +895,9 @@
         "threads"
       ],
       "option_types": {
+        "algo_type": [
+          "builtins.str"
+        ],
         "error": [
           "builtins.float"
         ],
@@ -902,13 +915,12 @@
           "builtins.int"
         ]
       },
-      "unsupported_option_types": [
-        "algo_type"
-      ],
+      "unsupported_option_types": [],
       "table_options": [
         "tables"
       ],
       "default_options": [
+        "algo_type",
         "is_null_equal_null",
         "mem_limit",
         "threads"
@@ -917,11 +929,15 @@
         "error"
       ],
       "needed_after_defaults": [
-        "algo_type",
         "tables"
       ],
-      "opts_keys": [],
-      "opts_error": null
+      "opts_keys": [
+        "algo_type"
+      ],
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "algo_type"
+      ]
     },
     "desbordante.cind_verification.algorithms.CINDVerifier": {
       "needed_options": [
@@ -944,6 +960,9 @@
         "completeness": [
           "builtins.float"
         ],
+        "condition_type": [
+          "builtins.str"
+        ],
         "lhs_indices": [
           "builtins.list",
           "builtins.int"
@@ -960,9 +979,7 @@
           "builtins.float"
         ]
       },
-      "unsupported_option_types": [
-        "condition_type"
-      ],
+      "unsupported_option_types": [],
       "table_options": [
         "tables"
       ],
@@ -970,6 +987,7 @@
       "non_default_options": [
         "cind_condition_values",
         "completeness",
+        "condition_type",
         "lhs_indices",
         "rhs_indices",
         "validity"
@@ -978,7 +996,10 @@
         "tables"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "condition_type"
+      ]
     },
     "desbordante.dc.algorithms.FastADC": {
       "needed_options": [
@@ -1125,25 +1146,32 @@
           "builtins.list",
           "desbordante.dd_verification.DF"
         ],
+        "metrics_map": [
+          "builtins.dict",
+          "builtins.str",
+          "desbordante.dd_verification.Metric"
+        ],
         "table": [
           "desbordante.data_types.Table"
         ]
       },
-      "unsupported_option_types": [
-        "metrics_map"
-      ],
+      "unsupported_option_types": [],
       "table_options": [
         "table"
       ],
       "default_options": [],
       "non_default_options": [
-        "dd"
+        "dd",
+        "metrics_map"
       ],
       "needed_after_defaults": [
         "table"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "metrics_map"
+      ]
     },
     "desbordante.dynamic_fd_verification.algorithms.DynamicFDVerifier": {
       "needed_options": [
@@ -1562,6 +1590,9 @@
         "minsup": [
           "builtins.int"
         ],
+        "sequence": [
+          "builtins.list"
+        ],
         "tasks_num_multiplier": [
           "builtins.float"
         ],
@@ -1572,13 +1603,12 @@
           "builtins.int"
         ]
       },
-      "unsupported_option_types": [
-        "sequence"
-      ],
+      "unsupported_option_types": [],
       "table_options": [],
       "default_options": [],
       "non_default_options": [
         "minsup",
+        "sequence",
         "tasks_num_multiplier",
         "threads",
         "window_size"
@@ -1587,7 +1617,10 @@
         "sequence"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "sequence"
+      ]
     },
     "desbordante.fem.MaxFEM": {
       "needed_options": [
@@ -1604,6 +1637,9 @@
         "minsup": [
           "builtins.int"
         ],
+        "sequence": [
+          "builtins.list"
+        ],
         "tasks_num_multiplier": [
           "builtins.float"
         ],
@@ -1614,13 +1650,12 @@
           "builtins.int"
         ]
       },
-      "unsupported_option_types": [
-        "sequence"
-      ],
+      "unsupported_option_types": [],
       "table_options": [],
       "default_options": [],
       "non_default_options": [
         "minsup",
+        "sequence",
         "tasks_num_multiplier",
         "threads",
         "window_size"
@@ -1629,7 +1664,10 @@
         "sequence"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "sequence"
+      ]
     },
     "desbordante.fem.TKE": {
       "needed_options": [
@@ -1645,6 +1683,9 @@
         "episodes_num": [
           "builtins.int"
         ],
+        "sequence": [
+          "builtins.list"
+        ],
         "threads": [
           "builtins.int"
         ],
@@ -1652,13 +1693,12 @@
           "builtins.int"
         ]
       },
-      "unsupported_option_types": [
-        "sequence"
-      ],
+      "unsupported_option_types": [],
       "table_options": [],
       "default_options": [],
       "non_default_options": [
         "episodes_num",
+        "sequence",
         "threads",
         "window_size"
       ],
@@ -1666,7 +1706,10 @@
         "sequence"
       ],
       "opts_keys": [],
-      "opts_error": null
+      "opts_error": null,
+      "previously_unsupported_option_types": [
+        "sequence"
+      ]
     },
     "desbordante.gdd.algorithms.NaiveGddValidator": {
       "needed_options": [
@@ -1937,8 +1980,12 @@
         "graph_database",
         "minsup"
       ],
-      "opts_keys": [],
-      "opts_error": "RuntimeError"
+      "opts_keys": [
+        "max_number_of_edges",
+        "output_path",
+        "output_single_vertices"
+      ],
+      "opts_error": null
     },
     "desbordante.ind.algorithms.Faida": {
       "needed_options": [

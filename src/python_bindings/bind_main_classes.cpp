@@ -8,7 +8,8 @@
 #include "core/algorithms/algo_factory.h"
 #include "core/algorithms/algorithm.h"
 #include "core/config/exceptions.h"
-#include "core/config/names.h"
+#include "core/config/tabular_data/input_tables_type.h"
+#include "core/model/sequence/isequence_stream.h"
 #include "python_bindings/py_util/get_py_type.h"
 #include "python_bindings/py_util/opt_to_py.h"
 #include "python_bindings/py_util/py_to_any.h"
@@ -91,10 +92,21 @@ void BindMainClasses(nb::module_& main_module) {
             .def(
                     "get_opts",
                     [](Algorithm& algorithm) {
+                        // Input streams are implementation details, not values that can be
+                        // represented by a public option type.  Skip them by type so that
+                        // table, tables, left_table, right_table and sequence do not make
+                        // get_opts() fail after the data has been loaded.
+                        static std::type_index const kInputTableType{typeid(config::InputTable)};
+                        static std::type_index const kInputTablesType{typeid(config::InputTables)};
+                        static std::type_index const kSequenceType{
+                                typeid(std::shared_ptr<model::ISequenceStream>)};
+
                         auto opt_value_info = algorithm.GetOptValues();
                         std::unordered_map<std::string_view, nb::object> res;
                         for (auto const& [name, value_info] : opt_value_info) {
-                            if (name == config::names::kTable || name == config::names::kSequence) {
+                            if (value_info.type == kInputTableType ||
+                                value_info.type == kInputTablesType ||
+                                value_info.type == kSequenceType) {
                                 continue;
                             }
                             res[name] = OptToPy(value_info.type, value_info.value);

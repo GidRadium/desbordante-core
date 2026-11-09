@@ -5,9 +5,24 @@
 The Python bindings now use nanobind. The public module layout, class names,
 pattern protocols and `_get_option_type` names remain unchanged; `_get_option_type`
 is checked against the T01 pybind11 baseline inventory for every algorithm option.
+T06 also filled the option types that the pybind11 baseline could not report; their
+old names are kept in the inventory as `previously_unsupported_option_types`.
 
 Python-visible behavior differences:
 
+* **Complete option type map.** `_get_option_type` now resolves every option,
+  including the eight types that raised `RuntimeError` in the pybind11 baseline:
+  `bin_operation`, the AFD-metric and CIND enums map to `str`; `sequence` maps
+  to `list` (paths are still accepted as input); `metrics_map` maps to
+  `dict[str, Metric]`. `get_opts` now skips all input-stream options by type
+  (`table`, `tables`, `left_table`, `right_table`, `sequence`) and can return
+  `column_matches` and `metrics_map` values.
+* **Shared-pointer wrapper identity.** nanobind has no holder template argument:
+  a live Python wrapper is cached for its C++ address, so a round-trip such as
+  `get_opts()` returns the same object and `is`/`id()` work while it is alive.
+  After the last wrapper is released, a later conversion may create a new
+  wrapper for the same C++ object (an `id()` value may even be reused), so
+  object identity is not part of the API contract; compare data instead.
 * **bool is strict.** Boolean options and boolean arguments accept only `True`
   and `False`. pybind11 also accepted `1`/`0` (and `None` as `False`) in several
   places; nanobind rejects them with `ConfigurationError` (`TypeError` for

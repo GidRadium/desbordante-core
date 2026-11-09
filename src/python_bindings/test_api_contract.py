@@ -715,6 +715,18 @@ class TestAlgorithmOptions(unittest.TestCase):
                     msg=f"{path}._get_option_type({option_name!r})",
                 )
 
+            # T06: every possible option must have a Python type.  T01
+            # recorded a few types as unsupported because the pybind11 map did
+            # not know them; the map is complete after the migration.
+            self.assertEqual(
+                sorted(set(expected["possible_options"]) - set(expected["option_types"])),
+                [],
+                msg=f"{path}: options without a Python type",
+            )
+            self.assertEqual(
+                expected["unsupported_option_types"], [], msg=f"{path}: unsupported options"
+            )
+
             for option_name in expected["unsupported_option_types"]:
                 with self.assertRaises(RuntimeError):
                     algorithm._get_option_type(option_name)
@@ -754,9 +766,13 @@ class TestAlgorithmOptions(unittest.TestCase):
     def test_option_type_names_match_baseline(self):
         """Every option's ``_get_option_type`` tuple matches the T01 inventory.
 
-        This is the explicit T05 check for the Python type names exposed by the
-        migration: ``int``/``float``/``str``/``list[...]`` and
-        ``data_types.Table`` must not degrade to C++ names.
+        This is the explicit T05/T06 check for the Python type names exposed by
+        the migration: ``int``/``float``/``str``/``list[...]`` and
+        ``data_types.Table`` must not degrade to C++ names.  The eight options
+        that were unsupported in the T01 pybind11 baseline (the ``Binop``,
+        ``AFDMetric``, CIND, DD-metric-map and FEM sequence types) now have
+        explicit entries; their old names are kept in the inventory under
+        ``previously_unsupported_option_types``.
         """
         checked = 0
         for path, expected in self.expected.items():
@@ -773,19 +789,286 @@ class TestAlgorithmOptions(unittest.TestCase):
         self.assertGreater(checked, 0)
 
     def test_table_option_type(self):
+        table_type = desb.data_types.Table
         for path, expected in self.expected.items():
             with self.subTest(algorithm=path):
                 algorithm = _resolve(path)()
                 for option_name in expected["table_options"]:
-                    self.assertIn(
-                        "desbordante.data_types.Table",
-                        [_type_name(py_type) for py_type in algorithm._get_option_type(option_name)],
-                    )
+                    types = algorithm._get_option_type(option_name)
+                    table_entries = [
+                        py_type
+                        for py_type in types
+                        if _type_name(py_type) == "desbordante.data_types.Table"
+                    ]
+                    self.assertTrue(table_entries, msg=f"{path}.{option_name}: {types}")
+                    for py_type in table_entries:
+                        self.assertIs(py_type, table_type)
+
+    def test_input_table_is_opaque_and_does_not_leak_stream_types(self):
+        """``NB_MAKE_OPAQUE(config::InputTable)`` keeps Table as a bound type.
+
+        If the shared_ptr caster intercepted InputTable, ``nb::class_`` would
+        fail with the "type is already intercepted by a type caster"
+        static_assert, or Python would see the internal IDatasetStream type.
+        """
+        table_type = desb.data_types.Table
+        self.assertEqual(table_type.__module__, "desbordante.data_types")
+        self.assertEqual(table_type.__name__, "Table")
+
+        for path, expected in self.expected.items():
+            with self.subTest(algorithm=path):
+                algorithm = _resolve(path)()
+                for option_name in expected["table_options"]:
+                    types = algorithm._get_option_type(option_name)
+                    if option_name == "tables":
+                        self.assertEqual(types[0], list)
+                        self.assertIs(types[1], table_type)
+                    else:
+                        self.assertEqual(len(types), 1)
+                        self.assertIs(types[0], table_type)
+
+        _modules, classes = _collect_inventory(desb)
+        leaked = [name for name in classes if "IDatasetStream" in name or "shared_ptr" in name]
+        self.assertEqual(leaked, [])
+
+    def test_special_option_types(self):
+        """The option names with non-trivial Python shapes used by T06."""
+        table_type = desb.data_types.Table
+        cases = (
+            ("desbordante.fd.algorithms.HyFD", "table", (table_type,)),
+            ("desbordante.ind.algorithms.Spider", "tables", (list, table_type)),
+            ("desbordante.fem.MaxFEM", "sequence", (list,)),
+            (
+                "desbordante.md.algorithms.HyMD",
+                "column_matches",
+                (list, desb.md.column_matches.ColumnMatch),
+            ),
+            (
+                "desbordante.dd_verification.algorithms.DDVerifier",
+                "metrics_map",
+                (dict, str, desb.dd_verification.Metric),
+            ),
+        )
+        for path, option_name, expected in cases:
+            with self.subTest(algorithm=path, option=option_name):
+                self.assertEqual(_resolve(path)()._get_option_type(option_name), expected)
 
     def test_unknown_option_type_raises_configuration_error(self):
         algorithm = desb.fd.algorithms.HyFD()
         with self.assertRaises(desb.ConfigurationError):
             algorithm._get_option_type("this_option_does_not_exist")
+
+
+class TestSharedPtrOwnership(unittest.TestCase):
+    """Ownership checks after pybind11 holders were replaced by nanobind casters.
+
+    nanobind stores the C++ object inline in the Python instance and has no
+    holder template argument.  ``std::shared_ptr<T>`` is handled by a type
+    caster which keeps the other side alive: Python -> C++ installs a deleter
+    that owns the Python wrapper, C++ -> Python attaches the shared_ptr as a
+    keep-alive to the wrapper.
+
+    Consequences frozen by these tests (also documented in the release notes):
+
+    * while a wrapper is alive, the same C++ object is exposed through the same
+      Python wrapper, so ``is``/``id()`` work for round-trips such as
+      ``get_opts()``;
+    * once the last wrapper is released, a later conversion may create a new
+      wrapper for the same C++ object.  ``is``/``id()`` are therefore not a
+      stable API guarantee; compare the data (``str``, fields) instead.  A
+      recycled ``id()`` value says nothing about identity;
+    * no class relies on ``enable_shared_from_this``.  A Python-created object
+      gets its first shared_ptr only when it is passed into C++.
+    """
+
+    def test_pac_domains_roundtrip_through_shared_ptr(self):
+        domains = (
+            desb.pac.domains.Ball(["0", "1"], 2.5),
+            desb.pac.domains.Parallelepiped(["0", "0"], ["5", "5"], [1.0, 0.5]),
+            desb.pac.domains.CustomDomain(lambda value: 0.0, "always-zero"),
+        )
+        for domain in domains:
+            with self.subTest(domain=type(domain).__name__):
+                algorithm = desb.pac_verification.algorithms.DomainPACVerifier()
+                algorithm._set_option("domain", domain)
+                value = algorithm.get_opts()["domain"]
+                self.assertIs(type(value), type(domain))
+                self.assertIsInstance(value, desb.pac.domains.IDomain)
+                # A live wrapper is cached by its C++ pointer.  This is an
+                # implementation detail, not a promise about future builds.
+                self.assertIs(value, domain)
+                self.assertEqual(str(value), str(domain))
+                del algorithm, value
+        gc.collect()
+
+    def test_pac_custom_domain_keeps_the_python_callback(self):
+        calls = []
+
+        def distance(value):
+            calls.append(value)
+            return 0.0
+
+        domain = desb.pac.domains.CustomDomain(distance, "always-zero")
+        algorithm = desb.pac_verification.algorithms.DomainPACVerifier()
+        try:
+            algorithm.load_data(
+                table=(str(_dataset("TestLong.csv")), ",", True),
+                column_indices=[0],
+                domain=domain,
+            )
+            algorithm.execute(max_epsilon=7, min_delta=0.8)
+            self.assertTrue(calls)
+            self.assertIs(algorithm.get_opts()["domain"], domain)
+        finally:
+            del algorithm, domain, distance
+            gc.collect()
+
+    @staticmethod
+    def _nar_with_all_range_types():
+        # Use the T01 golden NAR state and replace its ranges, so no mining is
+        # needed.  TypeId is a char enum: kInt = 0, kDouble = 1, kString = 3.
+        base = _load_pickle(_golden_path("NAR").read_bytes())
+        state = base.__getstate__()
+        new_state = (
+            state[0],
+            state[1],
+            state[2],
+            state[3],
+            {0: ("\x03", ["alpha", "beta"])},
+            {0: ("\x01", (1.5, 2.5)), 1: ("\x00", (3, 7))},
+        )
+        nar = desb.nar.NAR.__new__(desb.nar.NAR)
+        desb.nar.NAR.__setstate__(nar, new_state)
+        return nar
+
+    def test_nar_value_ranges_are_cached_and_keep_their_data(self):
+        nar = self._nar_with_all_range_types()
+        try:
+            string_range = nar.ante[0]
+            float_range = nar.cons[0]
+            int_range = nar.cons[1]
+
+            self.assertIs(type(string_range), desb.nar.StringValueRange)
+            self.assertIs(type(float_range), desb.nar.FloatValueRange)
+            self.assertIs(type(int_range), desb.nar.IntValueRange)
+            for value in (string_range, float_range, int_range):
+                self.assertIsInstance(value, desb.nar.ValueRange)
+
+            self.assertIs(nar.ante[0], string_range)
+            self.assertIs(nar.cons[0], float_range)
+            self.assertIs(nar.cons[1], int_range)
+
+            self.assertEqual(string_range.string, ["alpha", "beta"])
+            self.assertEqual((float_range.lower_bound, float_range.upper_bound), (1.5, 2.5))
+            self.assertEqual((int_range.lower_bound, int_range.upper_bound), (3, 7))
+
+            # ``string`` is a copy converted from std::vector; changing the
+            # returned list cannot mutate the C++ object.
+            exposed = string_range.string
+            exposed.append("gamma")
+            self.assertEqual(nar.ante[0].string, ["alpha", "beta"])
+
+            # Releasing the wrapper and converting the same C++ object again
+            # may allocate another wrapper (possibly at the same address).
+            # Only the data is contractual.
+            del string_range
+            gc.collect()
+            replacement = nar.ante[0]
+            self.assertIs(type(replacement), desb.nar.StringValueRange)
+            self.assertEqual(replacement.string, ["alpha", "beta"])
+            del replacement
+        finally:
+            del nar
+            gc.collect()
+
+    def test_md_column_matches_keep_their_concrete_type(self):
+        cases = (
+            (desb.md.column_matches.Levenshtein(0, 0), "Levenshtein"),
+            (desb.md.column_matches.MongeElkan(0, 0), "MongeElkan"),
+            (desb.md.column_matches.Jaccard(0, 0), "Jaccard"),
+            (desb.md.column_matches.LVNormDateDistance(0, 0), "LVNormDateDistance"),
+            (desb.md.column_matches.LVNormNumberDistance(0, 0), "LVNormNumberDistance"),
+            (desb.md.column_matches.Lcs(0, 0), "Lcs"),
+            (desb.md.column_matches.Equality(0, 0), "Equality"),
+            (
+                desb.md.column_matches.Custom(
+                    lambda left, right: 1.0 if left == right else 0.0, 0, 0
+                ),
+                "Custom",
+            ),
+        )
+        for measure, name in cases:
+            with self.subTest(column_match=name):
+                cls = getattr(desb.md.column_matches, name)
+                self.assertIs(type(measure), cls)
+                self.assertIsInstance(measure, desb.md.column_matches.ColumnMatch)
+
+        # HyMD stores the shared_ptr unchanged; get_opts returns the live
+        # wrapper (tables are skipped by type in get_opts).
+        measure = desb.md.column_matches.Levenshtein(0, 0)
+        algorithm = desb.md.algorithms.HyMD()
+        try:
+            algorithm.load_data(
+                left_table=(str(_dataset("animals_beverages.csv")), ",", True)
+            )
+            algorithm._set_option("column_matches", [measure])
+            options = algorithm.get_opts()
+            self.assertNotIn("left_table", options)
+            self.assertNotIn("right_table", options)
+            value = options["column_matches"][0]
+            self.assertIs(type(value), desb.md.column_matches.Levenshtein)
+            self.assertIsInstance(value, desb.md.column_matches.ColumnMatch)
+            self.assertIs(value, measure)
+        finally:
+            del algorithm, options, value, measure
+            gc.collect()
+
+    def test_dd_metric_shared_ptr_roundtrip(self):
+        cases = (
+            ("int", lambda left, right: abs(left - right), desb.dd_verification.MetricInt),
+            (
+                "string",
+                lambda left, right: float(left != right),
+                desb.dd_verification.MetricStr,
+            ),
+            (
+                "double",
+                lambda left, right: abs(left - right),
+                desb.dd_verification.MetricDouble,
+            ),
+        )
+        for tag, function, cls in cases:
+            with self.subTest(metric=tag):
+                metric = desb.dd_verification.make_metric_ptr((function, tag))
+                self.assertIs(type(metric), cls)
+                self.assertIsInstance(metric, desb.dd_verification.Metric)
+                direct = cls(function)
+                self.assertIs(type(direct), cls)
+
+        metric = desb.dd_verification.make_metric_ptr((cases[0][1], "int"))
+        verifier = desb.dd_verification.algorithms.DDVerifier()
+        try:
+            verifier.load_data(table=(str(_dataset("TestDD1.csv")), ",", True))
+            verifier._set_option("metrics_map", {"salary_level": metric})
+            value = verifier.get_opts()["metrics_map"]["salary_level"]
+            self.assertIs(type(value), desb.dd_verification.MetricInt)
+            self.assertIsInstance(value, desb.dd_verification.Metric)
+            self.assertIs(value, metric)
+        finally:
+            del verifier, value, metric
+            gc.collect()
+
+    def test_custom_metric_classes_are_abstract_get_opts_tags(self):
+        # CustomMetric/CustomVectorMetrics are tags for the legacy custom-metric
+        # option types.  No algorithm in the current inventory exposes such an
+        # option and the classes intentionally have no public constructor, so
+        # there is no live object to round-trip yet.
+        for cls in (desb.metrics.CustomMetric, desb.metrics.CustomVectorMetrics):
+            with self.subTest(cls=cls.__name__):
+                self.assertTrue(inspect.isclass(cls))
+                self.assertEqual(cls.__module__, "desbordante.metrics")
+                self.assertIn("__new__", cls.__dict__)
+                self.assertNotIn("__getstate__", cls.__dict__)
 
 
 class TestConfigurationError(unittest.TestCase):
@@ -1371,6 +1654,7 @@ class TestInputKinds(unittest.TestCase):
     def test_fem_iterable_sequence(self):
         algorithm = desb.fem.MaxFEM()
         algorithm.load_data(sequence=[[1], [2], [1], [2], [1]])
+        self.assertNotIn("sequence", algorithm.get_opts())
         algorithm.execute(minsup=3, window_size=1)
         self.assertEqual(algorithm.get_max_frequent_episodes(), [([[1]], 3)])
 

@@ -12,9 +12,13 @@
 
 #include <boost/core/demangle.hpp>
 
+#include "core/algorithms/algebraic_constraints/bin_operation_enum.h"
 #include "core/algorithms/cfd/fd_first/enums.h"
 #include "core/algorithms/cfd/model/raw_cfd.h"
+#include "core/algorithms/cind/types.h"
 #include "core/algorithms/dd/dd.h"
+#include "core/algorithms/dd/dd_verifier/Metric.h"
+#include "core/algorithms/fd/afd_metric/afd_metric.h"
 #include "core/algorithms/gdd/gdd.h"
 #include "core/algorithms/md/hymd/enums.h"
 #include "core/algorithms/md/hymd/hymd.h"
@@ -30,6 +34,7 @@
 #include "core/config/error_measure/type.h"
 #include "core/config/tabular_data/input_table_type.h"
 #include "core/config/tabular_data/input_tables_type.h"
+#include "core/model/sequence/isequence_stream.h"
 #include "core/model/table/column_combination.h"
 #include "core/model/transaction/input_format_type.h"
 
@@ -107,6 +112,10 @@ nb::tuple GetPyType(std::type_index type_index) {
             kPyTypePair<algos::hymd::LevelDefinition, &PyUnicode_Type>,
             kPyTypePair<algos::od::Ordering, &PyUnicode_Type>,
             kPyTypePair<algos::des::DifferentialStrategy, &PyUnicode_Type>,
+            kPyTypePair<algos::Binop, &PyUnicode_Type>,
+            kPyTypePair<algos::afd_metric_calculator::AFDMetric, &PyUnicode_Type>,
+            kPyTypePair<algos::cind::AlgoType, &PyUnicode_Type>,
+            kPyTypePair<algos::cind::CondType, &PyUnicode_Type>,
             kPyTypePair<std::vector<unsigned int>, &PyList_Type, &PyLong_Type>,
             {typeid(algos::hymd::HyMD::ColumnMatches),
              []() {
@@ -119,10 +128,19 @@ nb::tuple GetPyType(std::type_index type_index) {
                  return MakeTypeTuple(&PyTuple_Type, &PyList_Type,
                                       nb::type<model::DFStringConstraint>());
              }},
+            {typeid(std::unordered_map<std::string, std::shared_ptr<Metric>>),
+             []() {
+                 return MakeTypeTuple(&PyDict_Type, &PyUnicode_Type, nb::type<Metric>());
+             }},
             {typeid(config::InputTable),
              []() { return MakeTypeTuple(nb::type<config::InputTable>()); }},
             {typeid(config::InputTables),
              []() { return MakeTypeTuple(&PyList_Type, nb::type<config::InputTable>()); }},
+            // A sequence is exposed as a Python iterable of event sets (a path is accepted too).
+            // The std::shared_ptr<ISequenceStream> implementation detail must not leak into the
+            // public type map.
+            {typeid(std::shared_ptr<model::ISequenceStream>),
+             []() { return MakeTypeTuple(&PyList_Type); }},
             {typeid(algos::md::ColumnSimilarityClassifier),
              []() { return MakeTypeTuple(nb::type<algos::md::ColumnSimilarityClassifier>()); }},
             {typeid(std::vector<algos::md::ColumnSimilarityClassifier>),
