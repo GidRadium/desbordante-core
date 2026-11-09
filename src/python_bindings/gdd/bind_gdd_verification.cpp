@@ -167,8 +167,6 @@ void BindGddVerification(nb::module_& main_module) {
             .value("ABS_DIFF", DistanceMetric::kAbsDiff)
             .value("EDIT_DISTANCE", DistanceMetric::kEditDistance)
             .export_values()
-            .def("__eq__",
-                 [](DistanceMetric const& lhs, DistanceMetric const& rhs) { return lhs == rhs; })
             .def("__repr__", [](DistanceMetric metric) {
                 nb::object member = nb::cast(metric);
                 return "<DistanceMetric." + nb::cast<std::string>(member.attr("name")) + ": " +
@@ -183,7 +181,6 @@ void BindGddVerification(nb::module_& main_module) {
             .value("EQ", CmpOp::kEq)
             .value("NE", CmpOp::kNe)
             .export_values()
-            .def("__eq__", [](CmpOp const& lhs, CmpOp const& rhs) { return lhs == rhs; })
             .def("__repr__", [](CmpOp op) {
                 nb::object member = nb::cast(op);
                 return "<CmpOp." + nb::cast<std::string>(member.attr("name")) + ": " +

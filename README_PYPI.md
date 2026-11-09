@@ -112,7 +112,7 @@ This package uses the library of the Desbordante platform, which is written in C
 
 ## Usage examples
 
-Desbordante features can be accessed from within Python programs by employing the Desbordante Python library. The library is implemented in the form of Python bindings to the interface of the Desbordante C++ core library, using pybind11. Apart from discovery and validation of patterns, this interface is capable of providing valuable additional information which can, for example, describe why a given pattern does not hold. 
+Desbordante features can be accessed from within Python programs by employing the Desbordante Python library. The library is implemented in the form of Python bindings to the interface of the Desbordante C++ core library, using nanobind. Apart from discovery and validation of patterns, this interface is capable of providing valuable additional information which can, for example, describe why a given pattern does not hold.
 
 We want to demonstrate the power of Desbordante through examples where some patterns are extracted from tabular data, providing non-trivial insights. The patterns are quite complex and require detailed explanations, as well as a significant amount of code. This takes up quite a bit of space. Therefore, we do not include the actual code here; instead, we provide a clear (albeit simplified) definition and a link to a Colab notebook with interactive examples. The examples themselves are very detailed and allow users to understand the pattern and how to extract it using Desbordante.
 

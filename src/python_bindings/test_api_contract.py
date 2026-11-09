@@ -68,9 +68,12 @@ did; ``__setstate__`` accepts both that layout and an integer type code, so
 the baseline stream loads natively and both enum conversions stay readable.
 """
 
+import contextlib
 import copy
+import enum
 import gc
 import inspect
+import io
 import json
 import os
 import pickle
@@ -748,6 +751,27 @@ class TestAlgorithmOptions(unittest.TestCase):
         for path, expected in self.expected.items():
             self._check_algorithm(path, expected)
 
+    def test_option_type_names_match_baseline(self):
+        """Every option's ``_get_option_type`` tuple matches the T01 inventory.
+
+        This is the explicit T05 check for the Python type names exposed by the
+        migration: ``int``/``float``/``str``/``list[...]`` and
+        ``data_types.Table`` must not degrade to C++ names.
+        """
+        checked = 0
+        for path, expected in self.expected.items():
+            with self.subTest(algorithm=path):
+                algorithm = _resolve(path)()
+                for option_name, expected_types in expected["option_types"].items():
+                    actual_types = algorithm._get_option_type(option_name)
+                    self.assertEqual(
+                        [_type_name(py_type) for py_type in actual_types],
+                        expected_types,
+                        msg=f"{path}._get_option_type({option_name!r})",
+                    )
+                    checked += 1
+        self.assertGreater(checked, 0)
+
     def test_table_option_type(self):
         for path, expected in self.expected.items():
             with self.subTest(algorithm=path):
@@ -787,6 +811,265 @@ class TestEnums(unittest.TestCase):
             self.assertEqual(member.name, name)
             self.assertIs(getattr(desb.gdd, name), member)
             self.assertEqual(repr(member), f"<CmpOp.{name}: {value}>")
+
+    def test_are_python_enum_classes(self):
+        expected = {
+            "DistanceMetric": {"ABS_DIFF": 0, "EDIT_DISTANCE": 1},
+            "CmpOp": {"LE": 0, "GE": 1, "LT": 2, "GT": 3, "EQ": 4, "NE": 5},
+        }
+        for class_name, members in expected.items():
+            with self.subTest(enum=class_name):
+                enum_class = getattr(desb.gdd, class_name)
+                self.assertTrue(issubclass(enum_class, enum.Enum))
+                self.assertFalse(issubclass(enum_class, enum.IntEnum))
+                self.assertEqual(
+                    {name: member.value for name, member in enum_class.__members__.items()},
+                    members,
+                )
+                for name, value in members.items():
+                    member = enum_class[name]
+                    self.assertIs(enum_class(value), member)
+                    self.assertIs(getattr(enum_class, name), member)
+                    self.assertIsInstance(member, enum_class)
+                    self.assertIsInstance(member, enum.Enum)
+                    self.assertNotIsInstance(member, int)
+                    self.assertIsInstance(member.value, int)
+                    # Unlike an IntEnum, an enum member is not equal to its raw
+                    # integer value (pybind11 behaved the same way).
+                    self.assertFalse(member == value)
+                    self.assertEqual(hash(member), hash(member))
+
+    def test_int_conversion_is_not_implicit(self):
+        for member in (*desb.gdd.DistanceMetric, *desb.gdd.CmpOp):
+            with self.subTest(member=member):
+                with self.assertRaises(TypeError):
+                    int(member)
+                self.assertEqual(int(member.value), member.value)
+
+
+class TestNoneSemantics(unittest.TestCase):
+    def test_set_option_none_resets_default(self):
+        algorithm = desb.fd.algorithms.EulerFD()
+        algorithm._set_option("is_null_equal_null", False)
+        self.assertIs(algorithm.get_opts()["is_null_equal_null"], False)
+        algorithm._set_option("is_null_equal_null", None)
+        self.assertIs(algorithm.get_opts()["is_null_equal_null"], True)
+
+    def test_set_option_omitted_value_uses_none_default(self):
+        algorithm = desb.fd.algorithms.EulerFD()
+        algorithm._set_option("is_null_equal_null", False)
+        # ``option_value`` defaults to ``nb::none()``.
+        algorithm._set_option("is_null_equal_null")
+        self.assertIs(algorithm.get_opts()["is_null_equal_null"], True)
+
+    def test_optional_parameter_accepts_none(self):
+        item = desb.cfd.Item(0, None)
+        self.assertEqual(item.attribute, 0)
+        self.assertIsNone(item.value)
+
+        # A std::optional<T> argument accepts None without an explicit
+        # ``.none()`` annotation; the nested tuple constructor follows suit.
+        cfd = desb.cfd.CFD([(0, None)], (1, None))
+        self.assertIsNone(cfd.rhs.value)
+        self.assertEqual(list(cfd.lhs), [item])
+
+    def test_callable_arguments_accept_none_only_where_declared(self):
+        levenshtein = desb.md.column_matches.Levenshtein(0, 0, column_functions=None)
+        self.assertIsInstance(levenshtein, desb.md.column_matches.Levenshtein)
+
+        custom = desb.md.column_matches.Custom(
+            lambda left, right: 1.0, 0, 0, column_functions=None
+        )
+        self.assertIsInstance(custom, desb.md.column_matches.Custom)
+
+        # ``pick_lhs_indices`` is a typed callable without a None default.
+        with self.assertRaises(TypeError):
+            desb.md.column_matches.Levenshtein(0, 0, pick_lhs_indices=None)
+
+
+class TestBoolSemantics(unittest.TestCase):
+    BOOL_OPTION_CASES = (
+        ("desbordante.fd.algorithms.EulerFD", "is_null_equal_null"),
+        ("desbordante.ind.algorithms.Spider", "is_null_equal_null"),
+        ("desbordante.statistics.algorithms.DataStats", "is_null_equal_null"),
+        ("desbordante.fd_verification.algorithms.FDVerifier", "is_null_equal_null"),
+        ("desbordante.nd_verification.algorithms.NDVerifier", "is_null_equal_null"),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dataset = str(_dataset("WDC_satellites.csv"))
+
+    def test_set_option_bool_is_strict(self):
+        for path, option_name in self.BOOL_OPTION_CASES:
+            algorithm = _resolve(path)()
+            with self.subTest(algorithm=path, option=option_name):
+                self.assertEqual(algorithm._get_option_type(option_name), (bool,))
+                for value in (True, False):
+                    algorithm._set_option(option_name, value)
+                    self.assertIs(algorithm.get_opts()[option_name], value)
+                # ``None`` means "reset to the default" for _set_option.
+                algorithm._set_option(option_name, False)
+                algorithm._set_option(option_name, None)
+                self.assertIs(algorithm.get_opts()[option_name], True)
+                for invalid in (1, 0, "true", [], object()):
+                    with self.assertRaises(desb.ConfigurationError):
+                        algorithm._set_option(option_name, invalid)
+
+    def test_load_data_bool_is_strict(self):
+        for value in (True, False):
+            algorithm = desb.fd.algorithms.EulerFD()
+            algorithm.load_data(
+                table=(self.dataset, ",", True), is_null_equal_null=value
+            )
+            self.assertIs(algorithm.get_opts()["is_null_equal_null"], value)
+
+        for invalid in (1, 0, None, "true", []):
+            algorithm = desb.fd.algorithms.EulerFD()
+            with self.assertRaises(desb.ConfigurationError):
+                algorithm.load_data(
+                    table=(self.dataset, ",", True), is_null_equal_null=invalid
+                )
+
+    def test_execute_bool_is_strict(self):
+        # Bool options are consumed by load_data in these algorithms, so
+        # execute() is probed on a fresh instance where the option is still
+        # needed and therefore converted.
+        for invalid in (1, 0, None, "true", []):
+            with self.assertRaises(desb.ConfigurationError) as raised:
+                desb.fd.algorithms.EulerFD().execute(is_null_equal_null=invalid)
+            self.assertIn("Unable to cast", str(raised.exception))
+
+        for value in (True, False):
+            with self.assertRaises(desb.ConfigurationError) as raised:
+                desb.fd.algorithms.EulerFD().execute(is_null_equal_null=value)
+            self.assertNotIn("Unable to cast", str(raised.exception))
+
+    def test_table_tuple_flag_is_strict(self):
+        for value in (True, False):
+            algorithm = desb.fd.algorithms.EulerFD()
+            algorithm.load_data(table=(self.dataset, ",", value))
+            self.assertIs(algorithm.get_opts()["is_null_equal_null"], True)
+
+        for invalid in (1, 0, None, "true"):
+            algorithm = desb.fd.algorithms.EulerFD()
+            with self.assertRaises(desb.ConfigurationError):
+                algorithm.load_data(table=(self.dataset, ",", invalid))
+
+
+class TestMdConstructors(unittest.TestCase):
+    COLUMN_MATCHES = (
+        "Levenshtein",
+        "MongeElkan",
+        "Jaccard",
+        "Lcs",
+        "LVNormDateDistance",
+        "LVNormNumberDistance",
+    )
+
+    def test_defaults_and_keyword_only_arguments(self):
+        for name in self.COLUMN_MATCHES:
+            cls = getattr(desb.md.column_matches, name)
+            with self.subTest(column_match=name):
+                cls(0, 0)
+                cls(0, 0, 0.5)
+                cls(left_column=0, right_column=1, minimum_similarity=0.5)
+                cls(0, 0, 0.5, bound_number_limit=2)
+                cls(0, 0, 0.5, column_functions=None)
+                with self.assertRaises(TypeError):
+                    cls(0)
+                with self.assertRaises(TypeError):
+                    cls(0, 0, 0.5, 2)  # bound_number_limit is keyword-only
+
+    def test_column_functions_accept_none_callable_and_pair(self):
+        for name in self.COLUMN_MATCHES:
+            cls = getattr(desb.md.column_matches, name)
+            with self.subTest(column_match=name):
+                cls(0, 0, column_functions=None)
+                cls(0, 0, column_functions=lambda value: value)
+                cls(0, 0, column_functions=(lambda value: value, lambda value: value))
+                with self.assertRaises(TypeError):
+                    cls(0, 0, column_functions=1)
+
+    def test_pick_lhs_indices_requires_a_callable(self):
+        for name in self.COLUMN_MATCHES:
+            cls = getattr(desb.md.column_matches, name)
+            with self.subTest(column_match=name):
+                cls(0, 0, pick_lhs_indices=lambda similarities: [0])
+                for invalid in (None, 1, "pick"):
+                    with self.assertRaises(TypeError):
+                        cls(0, 0, pick_lhs_indices=invalid)
+
+    def test_custom_comparer_requires_a_callable(self):
+        custom = desb.md.column_matches.Custom
+        custom(lambda left, right: 1.0, 0, 0)
+        custom(1, 0, 0, True)  # the classic-measure overload takes any object
+        custom(lambda left, right: 1.0, 0, 0, True, column_functions=None)
+        custom(
+            lambda left, right: 1.0,
+            0,
+            0,
+            column_functions=None,
+            pick_lhs_indices=lambda similarities: [0],
+        )
+        for invalid in (None, 1, "comparer"):
+            with self.assertRaises(TypeError):
+                custom(invalid, 0, 0)
+        custom(lambda left, right: 1.0, 0, 0, pick_lhs_indices=lambda similarities: [0])
+        with self.assertRaises(TypeError):
+            custom(lambda left, right: 1.0, 0, 0, pick_lhs_indices=None)
+
+    def test_bool_constructor_arguments_are_strict(self):
+        custom = desb.md.column_matches.Custom
+        comparer = lambda left, right: 1.0
+        for value in (True, False):
+            custom(comparer, 0, 0, symmetrical=value, equality_is_max=value)
+            custom(comparer, 0, 0, value)
+        for invalid in (1, 0, None, "true"):
+            with self.assertRaises(TypeError):
+                custom(comparer, 0, 0, symmetrical=invalid)
+            with self.assertRaises(TypeError):
+                custom(comparer, 0, 0, equality_is_max=invalid)
+            with self.assertRaises(TypeError):
+                custom(comparer, 0, 0, invalid)
+
+    def test_docstrings_describe_overloads_and_defaults(self):
+        for name in self.COLUMN_MATCHES + ("Custom",):
+            cls = getattr(desb.md.column_matches, name)
+            with self.subTest(column_match=name):
+                doc = cls.__init__.__doc__
+                self.assertIsInstance(doc, str)
+                self.assertIn("*,", doc)
+                self.assertIn("column_functions:", doc)
+                self.assertIn("= None", doc)
+                self.assertIn("pick_lhs_indices:", doc)
+                self.assertIn("= pick_all", doc)
+                self.assertNotIn("<nanobind.nb_func", doc)
+                if name == "Custom":
+                    self.assertIn("min_sim: float = 0.7", doc)
+                    self.assertIn("Callable[[object, object], float]", doc)
+                    self.assertEqual(doc.count("-> None"), 3)
+                else:
+                    self.assertIn("minimum_similarity: float = 0.7", doc)
+                    self.assertIn("Callable", doc)
+                    self.assertEqual(doc.count("-> None"), 2)
+
+                # ``help()`` renders the same overload list as __doc__.
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    help(cls)
+                self.assertIn("pick_lhs_indices", output.getvalue())
+
+    def test_inspect_signature_points_to_the_overload_docstring(self):
+        for name in self.COLUMN_MATCHES + ("Custom",):
+            cls = getattr(desb.md.column_matches, name)
+            with self.subTest(column_match=name):
+                # nanobind does not expose a per-overload __text_signature__;
+                # the class has a generic signature and __init__ carries the
+                # detailed overloads.  This is documented in the release notes.
+                self.assertEqual(str(inspect.signature(cls)), "(*args, **kwargs)")
+                with self.assertRaises(ValueError):
+                    inspect.signature(cls.__init__)
 
 
 class TestPatternProtocols(unittest.TestCase):

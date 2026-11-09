@@ -45,11 +45,6 @@ auto BindColumnMatch(auto&& name, auto&& measures_module) {
     return cls;
 }
 
-template <typename ColumnFunctions>
-ColumnFunctions ToColumnFunctions(nb::object const& obj) {
-    return obj.is_none() ? ColumnFunctions{} : nb::cast<ColumnFunctions>(obj);
-}
-
 template <typename MeasureType, typename... Args>
 void BindColumnMatchWithConstructor(Args&&... args) {
     using ColumnFunctions = MeasureType::TransformFunctionsOption;
@@ -58,14 +53,14 @@ void BindColumnMatchWithConstructor(Args&&... args) {
                     "__init__",
                     [](MeasureType* self, ColumnIdentifier left_column,
                        ColumnIdentifier right_column, model::md::DecisionBoundary min_sim,
-                       std::size_t bound_number_limit, nb::object column_functions) {
-                        new (self)
-                                MeasureType(std::move(left_column), std::move(right_column),
-                                            min_sim, bound_number_limit,
-                                            ToColumnFunctions<ColumnFunctions>(column_functions));
+                       std::size_t bound_number_limit, ColumnFunctions column_functions) {
+                        new (self) MeasureType(std::move(left_column), std::move(right_column),
+                                               min_sim, bound_number_limit,
+                                               std::move(column_functions));
                     },
                     "left_column"_a, "right_column"_a, "minimum_similarity"_a = 0.7, nb::kw_only(),
-                    "bound_number_limit"_a = 0, "column_functions"_a = nb::none())
+                    "bound_number_limit"_a = 0,
+                    nb::arg("column_functions").none() = ColumnFunctions{})
             .def(
                     "__init__",
                     [](MeasureType* self, ColumnIdentifier left_column,
@@ -73,15 +68,16 @@ void BindColumnMatchWithConstructor(Args&&... args) {
                        nb::typed<nb::callable, std::vector<ColumnClassifierValueId>(
                                                        std::vector<Similarity> const&)>
                                similarities_picker,
-                       nb::object column_functions) {
+                       ColumnFunctions column_functions) {
                         new (self) MeasureType(
                                 std::move(left_column), std::move(right_column), min_sim,
                                 PyLhsCCVIDsPicker(std::move(similarities_picker)),
-                                ToColumnFunctions<ColumnFunctions>(column_functions));
+                                std::move(column_functions));
                     },
                     "left_column"_a, "right_column"_a, "minimum_similarity"_a = 0.7, nb::kw_only(),
-                    nb::arg("pick_lhs_indices") = ccv_id_pickers::SimilaritiesPicker(PickAll),
-                    "column_functions"_a = nb::none());
+                    nb::arg("pick_lhs_indices").sig("pick_all") =
+                            ccv_id_pickers::SimilaritiesPicker(PickAll),
+                    nb::arg("column_functions").none() = ColumnFunctions{});
 }
 
 nb::tuple SerializeColumnMatch(MD const& md_obj) {
@@ -270,57 +266,59 @@ void BindMd(nb::module_& main_module) {
                        nb::typed<nb::callable, preprocessing::Similarity(nb::object, nb::object)>
                                comparer,
                        ColumnIdentifier left_column, ColumnIdentifier right_column,
-                       nb::object column_functions, bool symmetrical, bool equality_is_max,
-                       model::md::DecisionBoundary min_sim, std::string measure_name,
-                       std::size_t size_limit) {
+                       ObjMeasureTransformFuncs column_functions, bool symmetrical,
+                       bool equality_is_max, model::md::DecisionBoundary min_sim,
+                       std::string measure_name, std::size_t size_limit) {
                         new (self) Custom(
                                 std::move(comparer), std::move(left_column),
-                                std::move(right_column),
-                                ToColumnFunctions<ObjMeasureTransformFuncs>(column_functions),
-                                symmetrical, equality_is_max, min_sim, std::move(measure_name),
-                                size_limit);
+                                std::move(right_column), std::move(column_functions), symmetrical,
+                                equality_is_max, min_sim, std::move(measure_name), size_limit);
                     },
                     "comparer"_a, "left_column"_a, "right_column"_a, nb::kw_only(),
-                    "column_functions"_a = nb::none(), "symmetrical"_a = false,
-                    "equality_is_max"_a = false, "min_sim"_a = 0.7,
+                    nb::arg("column_functions").none() = ObjMeasureTransformFuncs{},
+                    "symmetrical"_a = false, "equality_is_max"_a = false, "min_sim"_a = 0.7,
                     "measure_name"_a = "custom_measure", "size_limit"_a = 0)
             .def(
                     "__init__",
                     [](Custom* self, nb::object comparer, ColumnIdentifier left_column,
                        ColumnIdentifier right_column, bool classic_measure,
-                       nb::object column_functions, model::md::DecisionBoundary min_sim,
-                       std::string measure_name, std::size_t size_limit) {
+                       ObjMeasureTransformFuncs column_functions,
+                       model::md::DecisionBoundary min_sim, std::string measure_name,
+                       std::size_t size_limit) {
                         new (self) Custom(
                                 std::move(comparer), std::move(left_column),
                                 std::move(right_column), classic_measure,
-                                ToColumnFunctions<ObjMeasureTransformFuncs>(column_functions),
-                                min_sim, std::move(measure_name), size_limit);
+                                std::move(column_functions), min_sim, std::move(measure_name),
+                                size_limit);
                     },
                     "comparer"_a, "left_column"_a, "right_column"_a, "classic_measure"_a,
-                    nb::kw_only(), "column_functions"_a = nb::none(), "min_sim"_a = 0.7,
-                    "measure_name"_a = "custom_measure", "size_limit"_a = 0)
+                    nb::kw_only(),
+                    nb::arg("column_functions").none() = ObjMeasureTransformFuncs{},
+                    "min_sim"_a = 0.7, "measure_name"_a = "custom_measure", "size_limit"_a = 0)
             .def(
                     "__init__",
                     [](Custom* self,
                        nb::typed<nb::callable, preprocessing::Similarity(nb::object, nb::object)>
                                comparer,
                        ColumnIdentifier left_column, ColumnIdentifier right_column,
-                       nb::object column_functions, bool symmetrical, bool equality_is_max,
-                       model::md::DecisionBoundary min_sim, std::string measure_name,
+                       ObjMeasureTransformFuncs column_functions, bool symmetrical,
+                       bool equality_is_max, model::md::DecisionBoundary min_sim,
+                       std::string measure_name,
                        nb::typed<nb::callable, std::vector<ColumnClassifierValueId>(
                                                        std::vector<Similarity> const&)>
                                pick_lhs_indices) {
                         new (self) Custom(
                                 std::move(comparer), std::move(left_column),
-                                std::move(right_column),
-                                ToColumnFunctions<ObjMeasureTransformFuncs>(column_functions),
-                                symmetrical, equality_is_max, min_sim, std::move(measure_name),
+                                std::move(right_column), std::move(column_functions), symmetrical,
+                                equality_is_max, min_sim, std::move(measure_name),
                                 std::move(pick_lhs_indices));
                     },
                     "comparer"_a, "left_column"_a, "right_column"_a, nb::kw_only(),
-                    "column_functions"_a = nb::none(), "symmetrical"_a = false,
-                    "equality_is_max"_a = false, "min_sim"_a = 0.7, "measure_name"_a = "custom",
-                    nb::arg("pick_lhs_indices") = ccv_id_pickers::SimilaritiesPicker(PickAll))
+                    nb::arg("column_functions").none() = ObjMeasureTransformFuncs{},
+                    "symmetrical"_a = false, "equality_is_max"_a = false, "min_sim"_a = 0.7,
+                    "measure_name"_a = "custom",
+                    nb::arg("pick_lhs_indices").sig("pick_all") =
+                            ccv_id_pickers::SimilaritiesPicker(PickAll))
             .doc() = R"(Defines a column match with a custom similarity measure.)";
 
     BindPrimitive<HyMD>(md_module, &MdAlgorithm::MdList, "MdAlgorithm", "get_mds", {"HyMD"});
